@@ -287,12 +287,20 @@ class TestTaskRetrieval:
         with pytest.raises(TickTickNotFoundError):
             await client.get_task("nonexistent_task_id_12345")
 
-    async def test_get_all_tasks(self, seeded_client: TickTickClient):
+    async def test_get_all_tasks(self, client: TickTickClient):
         """Test getting all active tasks."""
-        tasks = await seeded_client.get_all_tasks()
+        # Create a task to ensure at least one exists
+        created_task = await client.create_task(title="Test Task for get_all")
+
+        tasks = await client.get_all_tasks()
 
         assert isinstance(tasks, list)
         assert len(tasks) > 0
+
+        # Verify our created task is in the list
+        task_ids = [t.id for t in tasks]
+        assert created_task.id in task_ids
+
         # All should be active
         for task in tasks:
             assert task.status == TaskStatus.ACTIVE

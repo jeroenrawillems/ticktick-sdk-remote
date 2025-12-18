@@ -267,7 +267,7 @@ mcp = FastMCP(
 
 def get_client(ctx: Context) -> TickTickClient:
     """Get the TickTick client from context."""
-    return ctx.request_context.lifespan_state["client"]
+    return ctx.request_context.lifespan_context["client"]
 
 
 # =============================================================================

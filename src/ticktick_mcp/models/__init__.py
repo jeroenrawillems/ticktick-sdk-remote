@@ -14,12 +14,17 @@ Models:
     - Column: Kanban column
     - User: User profile and status
     - FocusStats: Focus/Pomodoro statistics
+    - Habit: Recurring habit model
+    - HabitSection: Time-of-day habit grouping
+    - HabitCheckin: Habit check-in record
+    - HabitPreferences: Habit settings
 """
 
 from ticktick_mcp.models.task import Task, ChecklistItem, TaskReminder
 from ticktick_mcp.models.project import Project, ProjectGroup, Column, ProjectData
 from ticktick_mcp.models.tag import Tag
 from ticktick_mcp.models.user import User, UserStatus, UserStatistics
+from ticktick_mcp.models.habit import Habit, HabitSection, HabitCheckin, HabitPreferences
 
 __all__ = [
     "Task",
@@ -33,4 +38,8 @@ __all__ = [
     "User",
     "UserStatus",
     "UserStatistics",
+    "Habit",
+    "HabitSection",
+    "HabitCheckin",
+    "HabitPreferences",
 ]

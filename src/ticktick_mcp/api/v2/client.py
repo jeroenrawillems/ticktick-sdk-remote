@@ -60,6 +60,7 @@ import httpx
 from ticktick_mcp.api.base import BaseTickTickClient
 from ticktick_mcp.api.v2.auth import SessionHandler, SessionToken
 from ticktick_mcp.api.v2.types import (
+    BatchHabitRequestV2,
     BatchResponseV2,
     BatchTaskParentResponseV2,
     BatchTaskRequestV2,
@@ -68,6 +69,11 @@ from ticktick_mcp.api.v2.types import (
     BatchTagRequestV2,
     FocusDistributionV2,
     FocusHeatmapV2,
+    HabitCreateV2,
+    HabitPreferencesV2,
+    HabitSectionV2,
+    HabitUpdateV2,
+    HabitV2,
     ProjectCreateV2,
     ProjectGroupCreateV2,
     ProjectGroupUpdateV2,
@@ -1090,24 +1096,327 @@ class TickTickV2Client(BaseTickTickClient):
     # Habit Endpoints
     # =========================================================================
 
+    async def get_habits(self) -> list[HabitV2]:
+        """
+        Get all habits.
+
+        Returns:
+            List of habits
+        """
+        response = await self._get_json("/habits")
+        return response
+
+    async def get_habit_sections(self) -> list[HabitSectionV2]:
+        """
+        Get habit sections (time-of-day groupings).
+
+        Sections are: _morning, _afternoon, _night
+
+        Returns:
+            List of habit sections
+        """
+        response = await self._get_json("/habitSections")
+        return response
+
+    async def get_habit_preferences(self) -> HabitPreferencesV2:
+        """
+        Get habit preferences/settings.
+
+        Returns:
+            Habit preferences (showInCalendar, showInToday, enabled, etc.)
+        """
+        params = {"platform": "web"}
+        response = await self._get_json("/user/preferences/habit", params=params)
+        return response
+
+    async def batch_habits(
+        self,
+        add: list[HabitCreateV2] | None = None,
+        update: list[HabitUpdateV2] | None = None,
+        delete: list[str] | None = None,
+    ) -> BatchResponseV2:
+        """
+        Batch create, update, and delete habits.
+
+        Args:
+            add: Habits to create
+            update: Habits to update
+            delete: Habit IDs to delete
+
+        Returns:
+            Batch response with etags and errors
+        """
+        data: BatchHabitRequestV2 = {
+            "add": add or [],
+            "update": update or [],
+            "delete": delete or [],
+        }
+        response = await self._post_json("/habits/batch", json_data=data)
+        return response
+
+    async def create_habit(
+        self,
+        habit_id: str,
+        name: str,
+        *,
+        habit_type: str = "Boolean",
+        goal: float = 1.0,
+        step: float = 0.0,
+        unit: str = "Count",
+        icon: str = "habit_daily_check_in",
+        color: str = "#97E38B",
+        section_id: str | None = None,
+        repeat_rule: str = "RRULE:FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR,SA",
+        reminders: list[str] | None = None,
+        target_days: int = 0,
+        target_start_date: int | None = None,
+        encouragement: str = "",
+        record_enable: bool = False,
+        sort_order: int | None = None,
+    ) -> BatchResponseV2:
+        """
+        Create a habit.
+
+        Args:
+            habit_id: Client-generated habit ID (24-char hex)
+            name: Habit name
+            habit_type: "Boolean" for yes/no, "Real" for numeric
+            goal: Target goal value
+            step: Increment step for numeric habits
+            unit: Unit of measurement
+            icon: Icon resource name
+            color: Hex color
+            section_id: Time-of-day section ID
+            repeat_rule: RRULE recurrence pattern
+            reminders: List of reminder times ("HH:MM")
+            target_days: Goal in days (0 = no target)
+            target_start_date: Target start date (YYYYMMDD)
+            encouragement: Motivational message
+            record_enable: Enable value recording
+            sort_order: Display order
+
+        Returns:
+            Batch response
+        """
+        from datetime import datetime
+
+        now = datetime.now()
+        now_str = now.strftime("%Y-%m-%dT%H:%M:%S.000+0000")
+
+        habit: HabitCreateV2 = {
+            "id": habit_id,
+            "name": name,
+            "type": habit_type,
+            "goal": goal,
+            "step": step,
+            "unit": unit,
+            "iconRes": icon,
+            "color": color,
+            "status": 0,
+            "totalCheckIns": 0,
+            "currentStreak": 0,
+            "completedCycles": 0,
+            "createdTime": now_str,
+            "modifiedTime": now_str,
+            "encouragement": encouragement,
+            "recordEnable": record_enable,
+            "exDates": [],
+            "style": 1,
+            "etag": "",
+        }
+
+        if section_id:
+            habit["sectionId"] = section_id
+        if repeat_rule:
+            habit["repeatRule"] = repeat_rule
+        if reminders:
+            habit["reminders"] = reminders
+        if target_days:
+            habit["targetDays"] = target_days
+        if target_start_date:
+            habit["targetStartDate"] = target_start_date
+        if sort_order is not None:
+            habit["sortOrder"] = sort_order
+
+        return await self.batch_habits(add=[habit])
+
+    async def update_habit(
+        self,
+        habit_id: str,
+        *,
+        name: str | None = None,
+        habit_type: str | None = None,
+        goal: float | None = None,
+        step: float | None = None,
+        unit: str | None = None,
+        icon: str | None = None,
+        color: str | None = None,
+        section_id: str | None = None,
+        repeat_rule: str | None = None,
+        reminders: list[str] | None = None,
+        target_days: int | None = None,
+        encouragement: str | None = None,
+        record_enable: bool | None = None,
+        status: int | None = None,
+        total_checkins: int | None = None,
+        current_streak: int | None = None,
+    ) -> BatchResponseV2:
+        """
+        Update a habit.
+
+        Args:
+            habit_id: Habit ID
+            name: New name
+            habit_type: New type
+            goal: New goal
+            step: New step
+            unit: New unit
+            icon: New icon
+            color: New color
+            section_id: New section ID
+            repeat_rule: New repeat rule
+            reminders: New reminders
+            target_days: New target days
+            encouragement: New encouragement
+            record_enable: New record enable
+            status: New status (0=active, 2=archived)
+            total_checkins: New total check-ins
+            current_streak: New current streak
+
+        Returns:
+            Batch response
+        """
+        from datetime import datetime
+
+        habit: HabitUpdateV2 = {
+            "id": habit_id,
+            "modifiedTime": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000+0000"),
+        }
+
+        if name is not None:
+            habit["name"] = name
+        if habit_type is not None:
+            habit["type"] = habit_type
+        if goal is not None:
+            habit["goal"] = goal
+        if step is not None:
+            habit["step"] = step
+        if unit is not None:
+            habit["unit"] = unit
+        if icon is not None:
+            habit["iconRes"] = icon
+        if color is not None:
+            habit["color"] = color
+        if section_id is not None:
+            habit["sectionId"] = section_id
+        if repeat_rule is not None:
+            habit["repeatRule"] = repeat_rule
+        if reminders is not None:
+            habit["reminders"] = reminders
+        if target_days is not None:
+            habit["targetDays"] = target_days
+        if encouragement is not None:
+            habit["encouragement"] = encouragement
+        if record_enable is not None:
+            habit["recordEnable"] = record_enable
+        if status is not None:
+            habit["status"] = status
+        if total_checkins is not None:
+            habit["totalCheckIns"] = total_checkins
+        if current_streak is not None:
+            habit["currentStreak"] = current_streak
+
+        return await self.batch_habits(update=[habit])
+
+    async def delete_habit(self, habit_id: str) -> BatchResponseV2:
+        """
+        Delete a habit.
+
+        Args:
+            habit_id: Habit ID
+
+        Returns:
+            Batch response
+        """
+        return await self.batch_habits(delete=[habit_id])
+
+    async def checkin_habit(
+        self,
+        habit_id: str,
+        *,
+        value: float = 1.0,
+        current_total: int = 0,
+        current_streak: int = 0,
+    ) -> BatchResponseV2:
+        """
+        Check in a habit (complete it for today).
+
+        This updates the habit's totalCheckIns and currentStreak.
+
+        Args:
+            habit_id: Habit ID
+            value: Check-in value (1.0 for boolean habits)
+            current_total: Current total check-ins (will be incremented)
+            current_streak: Current streak (will be incremented)
+
+        Returns:
+            Batch response
+        """
+        return await self.update_habit(
+            habit_id=habit_id,
+            total_checkins=current_total + int(value),
+            current_streak=current_streak + 1,
+        )
+
+    async def archive_habit(self, habit_id: str) -> BatchResponseV2:
+        """
+        Archive a habit.
+
+        Args:
+            habit_id: Habit ID
+
+        Returns:
+            Batch response
+        """
+        return await self.update_habit(habit_id=habit_id, status=2)
+
+    async def unarchive_habit(self, habit_id: str) -> BatchResponseV2:
+        """
+        Unarchive a habit.
+
+        Args:
+            habit_id: Habit ID
+
+        Returns:
+            Batch response
+        """
+        return await self.update_habit(habit_id=habit_id, status=0)
+
     async def get_habit_checkins(
         self,
         habit_ids: list[str],
-        after_timestamp: int,
+        after_stamp: int = 0,
     ) -> Any:
         """
         Query habit check-ins.
 
         Args:
             habit_ids: List of habit IDs to query
-            after_timestamp: Unix timestamp to get check-ins after
+            after_stamp: Date stamp (YYYYMMDD) to get check-ins after
 
         Returns:
-            Habit check-in data
+            Habit check-in data with structure:
+            {
+                "checkins": {
+                    "habit_id": [
+                        {"habitId": "...", "checkinStamp": 20251218, "value": 1.0, ...}
+                    ]
+                }
+            }
         """
         data = {
             "habitIds": habit_ids,
-            "afterStamp": after_timestamp,
+            "afterStamp": after_stamp,
         }
         response = await self._post_json("/habitCheckins/query", json_data=data)
         return response

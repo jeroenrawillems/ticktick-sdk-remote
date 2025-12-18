@@ -611,11 +611,159 @@ class FocusDistributionV2(TypedDict):
 # =============================================================================
 
 
+class HabitV2(TypedDict):
+    """V2 API habit response."""
+
+    # Core identifiers
+    id: str
+    etag: NotRequired[str]
+
+    # Basic info
+    name: str
+    iconRes: NotRequired[str]
+    color: NotRequired[str]
+    sortOrder: NotRequired[int]
+    status: NotRequired[int]  # 0=active, 2=archived
+    encouragement: NotRequired[str]
+
+    # Tracking stats
+    totalCheckIns: NotRequired[int]
+    currentStreak: NotRequired[int]
+
+    # Timestamps
+    createdTime: NotRequired[str]
+    modifiedTime: NotRequired[str]
+    archivedTime: NotRequired[str]
+
+    # Habit type and goal
+    type: NotRequired[str]  # "Boolean" or "Real"
+    goal: NotRequired[float]
+    step: NotRequired[float]
+    unit: NotRequired[str]
+    recordEnable: NotRequired[bool]
+
+    # Schedule
+    repeatRule: NotRequired[str]  # RRULE format
+    reminders: NotRequired[list[str]]  # ["HH:MM", ...]
+    sectionId: NotRequired[str]
+
+    # Target tracking
+    targetDays: NotRequired[int]
+    targetStartDate: NotRequired[int]  # YYYYMMDD
+    completedCycles: NotRequired[int]
+    exDates: NotRequired[list[str]]
+    style: NotRequired[int]
+
+
+class HabitCreateV2(TypedDict, total=False):
+    """V2 API habit creation request."""
+
+    id: str  # Client-generated ID
+    name: str
+    iconRes: str
+    color: str
+    sortOrder: int
+    status: int
+    encouragement: str
+    totalCheckIns: int
+    createdTime: str
+    modifiedTime: str
+    type: str
+    goal: float
+    step: float
+    unit: str
+    recordEnable: bool
+    repeatRule: str
+    reminders: list[str]
+    sectionId: str
+    targetDays: int
+    targetStartDate: int
+    completedCycles: int
+    exDates: list[str]
+    currentStreak: int
+    style: int
+    etag: str
+
+
+class HabitUpdateV2(TypedDict, total=False):
+    """V2 API habit update request."""
+
+    id: str  # Required
+    name: str
+    iconRes: str
+    color: str
+    sortOrder: int
+    status: int
+    encouragement: str
+    totalCheckIns: int
+    modifiedTime: str
+    type: str
+    goal: float
+    step: float
+    unit: str
+    recordEnable: bool
+    repeatRule: str
+    reminders: list[str]
+    sectionId: str
+    targetDays: int
+    targetStartDate: int
+    completedCycles: int
+    exDates: list[str]
+    currentStreak: int
+    style: int
+    etag: str
+
+
+class HabitSectionV2(TypedDict):
+    """V2 API habit section response."""
+
+    id: str
+    name: str  # "_morning", "_afternoon", "_night"
+    sortOrder: NotRequired[int]
+    createdTime: NotRequired[str]
+    modifiedTime: NotRequired[str]
+    etag: NotRequired[str]
+
+
 class HabitCheckinQueryV2(TypedDict):
     """Habit check-in query request."""
 
     habitIds: list[str]
     afterStamp: int
+
+
+class HabitCheckinV2(TypedDict):
+    """V2 API habit check-in record."""
+
+    habitId: str
+    checkinStamp: int  # YYYYMMDD
+    checkinTime: NotRequired[str]
+    value: NotRequired[float]
+    goal: NotRequired[float]
+    status: NotRequired[int]  # 2=completed
+
+
+class HabitCheckinResponseV2(TypedDict):
+    """V2 API habit check-in query response."""
+
+    checkins: dict[str, list[HabitCheckinV2]]
+
+
+class HabitPreferencesV2(TypedDict):
+    """V2 API habit preferences response."""
+
+    showInCalendar: NotRequired[bool]
+    showInToday: NotRequired[bool]
+    enabled: NotRequired[bool]
+    defaultSection: NotRequired[dict[str, Any]]
+
+
+class BatchHabitRequestV2(TypedDict, total=False):
+    """V2 API batch habit request."""
+
+    add: list[HabitCreateV2]
+    update: list[HabitUpdateV2]
+    delete: list[str]  # List of habit IDs
 
 
 # =============================================================================

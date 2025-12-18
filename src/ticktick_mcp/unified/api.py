@@ -36,6 +36,10 @@ from ticktick_mcp.models import (
     User,
     UserStatus,
     UserStatistics,
+    Habit,
+    HabitSection,
+    HabitCheckin,
+    HabitPreferences,
 )
 from ticktick_mcp.unified.router import APIRouter
 
@@ -1357,11 +1361,326 @@ class UnifiedTickTickAPI:
     # Habit Operations (V2 Only)
     # =========================================================================
 
+    async def list_habits(self) -> list[Habit]:
+        """
+        List all habits.
+
+        V2-only operation.
+
+        Returns:
+            List of habits
+        """
+        self._ensure_initialized()
+        data = await self._v2_client.get_habits()  # type: ignore
+        return [Habit.from_v2(h) for h in data]
+
+    async def get_habit(self, habit_id: str) -> Habit:
+        """
+        Get a habit by ID.
+
+        V2-only operation.
+
+        Args:
+            habit_id: Habit ID
+
+        Returns:
+            Habit object
+
+        Raises:
+            TickTickNotFoundError: If habit not found
+        """
+        self._ensure_initialized()
+        habits = await self.list_habits()
+        for habit in habits:
+            if habit.id == habit_id:
+                return habit
+        raise TickTickNotFoundError(
+            f"Habit not found: {habit_id}",
+            resource_id=habit_id,
+        )
+
+    async def list_habit_sections(self) -> list[HabitSection]:
+        """
+        List habit sections (time-of-day groupings).
+
+        V2-only operation.
+
+        Returns:
+            List of habit sections (_morning, _afternoon, _night)
+        """
+        self._ensure_initialized()
+        data = await self._v2_client.get_habit_sections()  # type: ignore
+        return [HabitSection.from_v2(s) for s in data]
+
+    async def get_habit_preferences(self) -> HabitPreferences:
+        """
+        Get habit preferences/settings.
+
+        V2-only operation.
+
+        Returns:
+            Habit preferences (showInCalendar, showInToday, enabled, etc.)
+        """
+        self._ensure_initialized()
+        data = await self._v2_client.get_habit_preferences()  # type: ignore
+        return HabitPreferences.from_v2(data)
+
+    async def create_habit(
+        self,
+        name: str,
+        *,
+        habit_type: str = "Boolean",
+        goal: float = 1.0,
+        step: float = 0.0,
+        unit: str = "Count",
+        icon: str = "habit_daily_check_in",
+        color: str = "#97E38B",
+        section_id: str | None = None,
+        repeat_rule: str = "RRULE:FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR,SA",
+        reminders: list[str] | None = None,
+        target_days: int = 0,
+        encouragement: str = "",
+    ) -> Habit:
+        """
+        Create a new habit.
+
+        V2-only operation.
+
+        Args:
+            name: Habit name
+            habit_type: "Boolean" for yes/no, "Real" for numeric
+            goal: Target goal value (1.0 for boolean)
+            step: Increment step for numeric habits
+            unit: Unit of measurement
+            icon: Icon resource name
+            color: Hex color
+            section_id: Time-of-day section ID
+            repeat_rule: RRULE recurrence pattern
+            reminders: List of reminder times ("HH:MM")
+            target_days: Goal in days (0 = no target)
+            encouragement: Motivational message
+
+        Returns:
+            Created habit
+        """
+        import secrets
+        from datetime import datetime
+
+        self._ensure_initialized()
+
+        # Generate a 24-character hex ID (MongoDB ObjectId format)
+        habit_id = secrets.token_hex(12)
+
+        # Calculate target start date if target_days > 0
+        target_start_date = None
+        if target_days > 0:
+            target_start_date = int(datetime.now().strftime("%Y%m%d"))
+
+        # Determine if record_enable should be true (for numeric habits)
+        record_enable = habit_type == "Real"
+
+        response = await self._v2_client.create_habit(  # type: ignore
+            habit_id=habit_id,
+            name=name,
+            habit_type=habit_type,
+            goal=goal,
+            step=step,
+            unit=unit,
+            icon=icon,
+            color=color,
+            section_id=section_id,
+            repeat_rule=repeat_rule,
+            reminders=reminders,
+            target_days=target_days,
+            target_start_date=target_start_date,
+            encouragement=encouragement,
+            record_enable=record_enable,
+        )
+
+        # Check for errors
+        _check_batch_response_errors(response, "create_habit", [habit_id])
+
+        # Return the created habit
+        return await self.get_habit(habit_id)
+
+    async def update_habit(
+        self,
+        habit_id: str,
+        *,
+        name: str | None = None,
+        goal: float | None = None,
+        step: float | None = None,
+        unit: str | None = None,
+        icon: str | None = None,
+        color: str | None = None,
+        section_id: str | None = None,
+        repeat_rule: str | None = None,
+        reminders: list[str] | None = None,
+        target_days: int | None = None,
+        encouragement: str | None = None,
+    ) -> Habit:
+        """
+        Update a habit.
+
+        V2-only operation.
+
+        Args:
+            habit_id: Habit ID
+            name: New name
+            goal: New goal
+            step: New step
+            unit: New unit
+            icon: New icon
+            color: New color
+            section_id: New section ID
+            repeat_rule: New repeat rule
+            reminders: New reminders
+            target_days: New target days
+            encouragement: New encouragement
+
+        Returns:
+            Updated habit
+
+        Raises:
+            TickTickNotFoundError: If habit not found
+        """
+        self._ensure_initialized()
+
+        # Verify habit exists
+        await self.get_habit(habit_id)  # Raises NotFoundError if missing
+
+        response = await self._v2_client.update_habit(  # type: ignore
+            habit_id=habit_id,
+            name=name,
+            goal=goal,
+            step=step,
+            unit=unit,
+            icon=icon,
+            color=color,
+            section_id=section_id,
+            repeat_rule=repeat_rule,
+            reminders=reminders,
+            target_days=target_days,
+            encouragement=encouragement,
+        )
+
+        _check_batch_response_errors(response, "update_habit", [habit_id])
+
+        return await self.get_habit(habit_id)
+
+    async def delete_habit(self, habit_id: str) -> None:
+        """
+        Delete a habit.
+
+        V2-only operation.
+
+        Args:
+            habit_id: Habit ID
+
+        Raises:
+            TickTickNotFoundError: If habit not found
+        """
+        self._ensure_initialized()
+
+        # Verify habit exists
+        await self.get_habit(habit_id)  # Raises NotFoundError if missing
+
+        response = await self._v2_client.delete_habit(habit_id)  # type: ignore
+        _check_batch_response_errors(response, "delete_habit", [habit_id])
+
+    async def checkin_habit(
+        self,
+        habit_id: str,
+        value: float = 1.0,
+    ) -> Habit:
+        """
+        Check in a habit (complete it for today).
+
+        V2-only operation.
+
+        This increments the habit's totalCheckIns and currentStreak.
+
+        Args:
+            habit_id: Habit ID
+            value: Check-in value (1.0 for boolean habits)
+
+        Returns:
+            Updated habit
+
+        Raises:
+            TickTickNotFoundError: If habit not found
+        """
+        self._ensure_initialized()
+
+        # Get current habit to know current stats
+        habit = await self.get_habit(habit_id)
+
+        response = await self._v2_client.checkin_habit(  # type: ignore
+            habit_id=habit_id,
+            value=value,
+            current_total=habit.total_checkins,
+            current_streak=habit.current_streak,
+        )
+
+        _check_batch_response_errors(response, "checkin_habit", [habit_id])
+
+        return await self.get_habit(habit_id)
+
+    async def archive_habit(self, habit_id: str) -> Habit:
+        """
+        Archive a habit.
+
+        V2-only operation.
+
+        Args:
+            habit_id: Habit ID
+
+        Returns:
+            Updated habit
+
+        Raises:
+            TickTickNotFoundError: If habit not found
+        """
+        self._ensure_initialized()
+
+        # Verify habit exists
+        await self.get_habit(habit_id)
+
+        response = await self._v2_client.archive_habit(habit_id)  # type: ignore
+        _check_batch_response_errors(response, "archive_habit", [habit_id])
+
+        return await self.get_habit(habit_id)
+
+    async def unarchive_habit(self, habit_id: str) -> Habit:
+        """
+        Unarchive a habit.
+
+        V2-only operation.
+
+        Args:
+            habit_id: Habit ID
+
+        Returns:
+            Updated habit
+
+        Raises:
+            TickTickNotFoundError: If habit not found
+        """
+        self._ensure_initialized()
+
+        # Verify habit exists
+        await self.get_habit(habit_id)
+
+        response = await self._v2_client.unarchive_habit(habit_id)  # type: ignore
+        _check_batch_response_errors(response, "unarchive_habit", [habit_id])
+
+        return await self.get_habit(habit_id)
+
     async def get_habit_checkins(
         self,
         habit_ids: list[str],
         after_stamp: int = 0,
-    ) -> dict[str, Any]:
+    ) -> dict[str, list[HabitCheckin]]:
         """
         Get habit check-in data.
 
@@ -1369,15 +1688,18 @@ class UnifiedTickTickAPI:
 
         Args:
             habit_ids: List of habit IDs to query
-            after_stamp: Unix timestamp to get check-ins after (0 for all)
+            after_stamp: Date stamp (YYYYMMDD) to get check-ins after (0 for all)
 
         Returns:
-            Habit check-in data dictionary with:
-            - checkins: List of check-in records
-            - Each checkin contains habitId, checkinTime, value, etc.
-
-        Note:
-            To get habit IDs, use sync() and look at the 'habits' field.
+            Dict mapping habit IDs to lists of check-in records
         """
         self._ensure_initialized()
-        return await self._v2_client.get_habit_checkins(habit_ids, after_stamp)  # type: ignore
+        data = await self._v2_client.get_habit_checkins(habit_ids, after_stamp)  # type: ignore
+
+        result: dict[str, list[HabitCheckin]] = {}
+        checkins_data = data.get("checkins", {})
+
+        for habit_id, checkins in checkins_data.items():
+            result[habit_id] = [HabitCheckin.from_v2(c) for c in checkins]
+
+        return result

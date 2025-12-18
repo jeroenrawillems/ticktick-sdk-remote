@@ -55,33 +55,36 @@ A comprehensive async Python library for [TickTick](https://ticktick.com) with [
 
 ### The Two-API Problem
 
-TickTick has **two different APIs**, each with unique capabilities:
+TickTick has **two different APIs**:
 
-| Feature | V1 (OAuth2) | V2 (Session) | This Library |
-|---------|:-----------:|:------------:|:------------:|
-| Official/Documented | Yes | No | Both |
-| Tags | No | Yes | **Yes** |
-| Folders (Project Groups) | No | Yes | **Yes** |
-| Focus/Pomodoro Data | No | Yes | **Yes** |
-| Habits | No | Yes | **Yes** |
-| User Statistics | No | Yes | **Yes** |
-| Move Tasks | No | Yes | **Yes** |
-| Subtasks | Limited | Full | **Full** |
-| Get Project with Tasks | Yes | No | **Yes** |
+| API | Type | What We Use It For |
+|-----|------|-------------------|
+| **V1 (OAuth2)** | Official, documented | Project with all tasks, basic operations |
+| **V2 (Session)** | Unofficial, reverse-engineered | Tags, folders, habits, focus, subtasks, and more |
 
-**This library combines both APIs** to give you everything TickTick offers, with a single unified interface.
+The official V1 API is limited. Most of TickTick's power features (tags, habits, focus tracking) are only available through the undocumented V2 web API. **This library combines both**, routing each operation to the appropriate API automatically.
 
 ### Compared to Other Libraries
 
-| Feature | ticktick-mcp | ticktick-py | Others |
-|---------|:------------:|:-----------:|:------:|
-| Async Support | Yes | No | Varies |
-| MCP Server | Yes | No | No |
-| Habits | Full CRUD | No | No |
-| Focus Data | Yes | No | No |
-| V2 API | Yes | Limited | No |
-| Type Hints | Full | Partial | Varies |
-| Active Maintenance | Yes | Limited | Varies |
+Based on analysis of the actual source code of available TickTick Python libraries:
+
+| Feature | ticktick-mcp | pyticktick | ticktick-py | tickthon | ticktick-python |
+|---------|:------------:|:----------:|:-----------:|:--------:|:---------------:|
+| **I/O Model** | Async | Async | Sync | Sync | Sync |
+| **Type System** | Pydantic V2 | Pydantic V2 | Dicts | attrs | addict |
+| **MCP Server** | **Yes** | No | No | No | No |
+| **Habits** | **Full CRUD** | No | Basic | Basic | No |
+| **Focus/Pomo** | Yes | Yes | Yes | Yes | No |
+| **Unified V1+V2** | **Smart Routing** | Separate | Both | V2 only | V2 only |
+| **Subtasks** | Advanced | Batch | Yes | Basic | Basic |
+| **Tags** | Full (merge/rename) | Yes | Yes | Yes | No |
+
+**Key Differentiators:**
+
+- **MCP Server**: Only ticktick-mcp provides AI assistant integration via Model Context Protocol
+- **Unified API Routing**: Automatically routes operations to V1 or V2 based on feature requirements
+- **Full Habit CRUD**: Complete habit management including check-ins, streaks, archive/unarchive
+- **Async-First**: Built on `httpx` for high-performance async operations
 
 ---
 

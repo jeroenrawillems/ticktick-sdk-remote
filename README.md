@@ -33,7 +33,7 @@ This library combines both APIs to give you **everything**.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/ticktick-mcp.git
+git clone https://github.com/dev-mirzabicer/ticktick-mcp.git
 cd ticktick-mcp
 
 # Create virtual environment

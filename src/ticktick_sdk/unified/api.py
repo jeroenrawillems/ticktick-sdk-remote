@@ -829,7 +829,8 @@ class UnifiedTickTickAPI:
         """
         Get a project with its tasks and columns.
 
-        V1-only operation.
+        Tries V2 API first (using sync data to get tasks), then falls back to V1.
+        Note: V2 doesn't provide kanban column data, so columns will be empty.
 
         Args:
             project_id: Project ID
@@ -842,22 +843,64 @@ class UnifiedTickTickAPI:
         """
         self._ensure_initialized()
 
-        if not self._router.has_v1:
-            raise TickTickAPIUnavailableError(
-                "V1 API required for get_project_with_data",
-                operation="get_project_with_data",
-            )
+        # Try V2 first (more reliable for projects created via V2)
+        if self._router.has_v2:
+            try:
+                # Get all data from sync
+                state = await self._v2_client.sync()  # type: ignore
 
-        data = await self._v1_client.get_project_with_data(project_id)  # type: ignore
+                # Find the project
+                project_data = None
+                for p in state.get("projectProfiles", []):
+                    if p.get("id") == project_id:
+                        project_data = p
+                        break
 
-        # V1 returns empty dict {} for nonexistent projects
-        if not data or not data.get("project"):
-            raise TickTickNotFoundError(
-                f"Project not found: {project_id}",
-                resource_id=project_id,
-            )
+                if project_data is None:
+                    raise TickTickNotFoundError(
+                        f"Project not found: {project_id}",
+                        resource_id=project_id,
+                    )
 
-        return ProjectData.from_v1(data)
+                project = Project.from_v2(project_data)
+
+                # Get tasks for this project from sync data
+                all_tasks_data = state.get("syncTaskBean", {}).get("update", [])
+                project_tasks = [
+                    Task.from_v2(t)
+                    for t in all_tasks_data
+                    if t.get("projectId") == project_id
+                ]
+
+                return ProjectData.from_v2(project, project_tasks)
+
+            except TickTickNotFoundError:
+                raise
+            except Exception as e:
+                logger.warning("V2 get_project_with_data failed, trying V1: %s", e)
+
+        # Fall back to V1 if available
+        if self._router.has_v1:
+            try:
+                data = await self._v1_client.get_project_with_data(project_id)  # type: ignore
+
+                # V1 returns empty dict {} for nonexistent projects
+                if not data or not data.get("project"):
+                    raise TickTickNotFoundError(
+                        f"Project not found: {project_id}",
+                        resource_id=project_id,
+                    )
+
+                return ProjectData.from_v1(data)
+            except TickTickNotFoundError:
+                raise
+            except Exception as e:
+                logger.warning("V1 get_project_with_data also failed: %s", e)
+
+        raise TickTickAPIUnavailableError(
+            "Could not get project with data: both V1 and V2 failed",
+            operation="get_project_with_data",
+        )
 
     async def create_project(
         self,

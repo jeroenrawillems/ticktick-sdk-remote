@@ -254,3 +254,20 @@ class ProjectData(TickTickModel):
         columns = [Column.model_validate(c) for c in data.get("columns", [])]
 
         return cls(project=project, tasks=tasks, columns=columns)
+
+    @classmethod
+    def from_v2(cls, project: Project, tasks: list[Any]) -> Self:
+        """
+        Create from V2 API data.
+
+        This is used as a fallback when V1 API is unavailable.
+        Note: V2 doesn't provide column data, so columns will be empty.
+
+        Args:
+            project: Project object
+            tasks: List of Task objects for this project
+
+        Returns:
+            ProjectData instance
+        """
+        return cls(project=project, tasks=tasks, columns=[])

@@ -5,7 +5,7 @@ A comprehensive async Python library for [TickTick](https://ticktick.com) with [
 ## Features
 
 - **Full-Featured Python Client**: Async API for tasks, projects, tags, folders, focus tracking, habits, and more
-- **MCP Server**: 36 tools for AI assistant integration (Claude, etc.)
+- **MCP Server**: 45 tools for AI assistant integration (Claude, etc.)
 - **Unified V1/V2 API**: Combines official OAuth2 API with unofficial session API for maximum functionality
 - **Type-Safe**: Full Pydantic v2 validation with comprehensive type hints
 - **Well-Tested**: 290+ tests covering both mock and live API interactions
@@ -367,20 +367,79 @@ async with TickTickClient.from_settings() as client:
 
 ### Habits
 
+TickTick habits are recurring activities you want to track. The library supports full CRUD operations for habits.
+
 ```python
 async with TickTickClient.from_settings() as client:
-    # Get habits from sync
-    state = await client.sync()
-    habits = state.get("habits", [])
+    # List all habits
+    habits = await client.get_all_habits()
     for habit in habits:
-        print(f"Habit: {habit.get('name')} (ID: {habit.get('id')})")
+        print(f"{habit.name}: {habit.current_streak} day streak")
 
-    # Get habit check-ins
-    if habits:
-        habit_ids = [h["id"] for h in habits[:3]]
-        checkins = await client.get_habit_checkins(habit_ids)
-        print(f"Check-ins: {checkins}")
+    # Get a specific habit
+    habit = await client.get_habit("habit_id_here")
+
+    # Create a boolean habit (yes/no)
+    habit = await client.create_habit(
+        name="Exercise",
+        color="#4A90D9",
+        reminders=["07:00"],  # HH:MM format
+        target_days=30,  # 30-day challenge
+    )
+
+    # Create a numeric habit (count/measure)
+    habit = await client.create_habit(
+        name="Read",
+        habit_type="Real",  # "Boolean" for yes/no, "Real" for numeric
+        goal=30,  # Target: 30 pages
+        step=5,   # +5 button
+        unit="Pages",
+        encouragement="Keep reading!",
+    )
+
+    # Check in a habit (complete for today)
+    habit = await client.checkin_habit("habit_id")
+
+    # Check in with a value (for numeric habits)
+    habit = await client.checkin_habit("habit_id", value=10)
+
+    # Update a habit
+    habit = await client.update_habit(
+        habit_id="...",
+        name="New Name",
+        color="#FF5500",
+        goal=50,
+    )
+
+    # Archive/unarchive a habit
+    await client.archive_habit("habit_id")
+    await client.unarchive_habit("habit_id")
+
+    # Delete a habit
+    await client.delete_habit("habit_id")
+
+    # Get habit sections (morning, afternoon, night)
+    sections = await client.get_habit_sections()
+    for section in sections:
+        print(f"{section.display_name}: {section.id}")
+
+    # Get habit check-in history
+    checkins = await client.get_habit_checkins(
+        habit_ids=["habit_id_1", "habit_id_2"],
+        after_stamp=20251201,  # YYYYMMDD format
+    )
+    for habit_id, records in checkins.items():
+        print(f"Habit {habit_id}: {len(records)} check-ins")
+
+    # Get habit preferences
+    prefs = await client.get_habit_preferences()
+    print(f"Show in calendar: {prefs.show_in_calendar}")
 ```
+
+**Habit Repeat Rules (RRULE format):**
+- Daily: `RRULE:FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR,SA`
+- Weekdays only: `RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR`
+- X times per week: `RRULE:FREQ=WEEKLY;TT_TIMES=5`
 
 ### Advanced Task Queries
 
@@ -511,7 +570,16 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 | `ticktick_get_preferences` | Get user preferences |
 | `ticktick_focus_heatmap` | Get focus heatmap |
 | `ticktick_focus_by_tag` | Get focus time by tag |
-| `ticktick_habit_checkins` | Get habit check-in data |
+| `ticktick_habits` | List all habits |
+| `ticktick_habit` | Get habit details |
+| `ticktick_habit_sections` | List habit sections (morning/afternoon/night) |
+| `ticktick_create_habit` | Create a new habit |
+| `ticktick_update_habit` | Update habit properties |
+| `ticktick_delete_habit` | Delete a habit |
+| `ticktick_checkin_habit` | Check in a habit (complete for today) |
+| `ticktick_archive_habit` | Archive a habit |
+| `ticktick_unarchive_habit` | Unarchive a habit |
+| `ticktick_habit_checkins` | Get habit check-in history |
 | `ticktick_sync` | Full account sync |
 
 ---
@@ -626,6 +694,10 @@ pytest --cov=ticktick_mcp --cov-report=term-missing
 | `Project` | Project/list container for tasks |
 | `ProjectGroup` | Folder for organizing projects |
 | `Tag` | Tag with name, color, and optional parent |
+| `Habit` | Recurring habit with goals, streaks, and check-ins |
+| `HabitSection` | Time-of-day grouping for habits (morning/afternoon/night) |
+| `HabitCheckin` | Individual habit check-in record |
+| `HabitPreferences` | User habit settings |
 | `User` | User profile information |
 | `UserStatus` | Account status (Pro, inbox ID, etc.) |
 | `UserStatistics` | Productivity statistics |

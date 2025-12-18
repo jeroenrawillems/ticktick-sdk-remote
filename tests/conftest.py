@@ -41,6 +41,10 @@ from ticktick_mcp.models import (
     User,
     UserStatus,
     UserStatistics,
+    Habit,
+    HabitSection,
+    HabitCheckin,
+    HabitPreferences,
 )
 from ticktick_mcp.constants import TaskStatus, TaskPriority, ProjectKind, ViewMode
 
@@ -70,6 +74,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "tags: Tag-related tests")
     config.addinivalue_line("markers", "user: User-related tests")
     config.addinivalue_line("markers", "focus: Focus/Pomodoro tests")
+    config.addinivalue_line("markers", "habits: Habit-related tests")
     config.addinivalue_line("markers", "sync: Sync-related tests")
     config.addinivalue_line("markers", "errors: Error handling tests")
     config.addinivalue_line("markers", "lifecycle: Client lifecycle tests")
@@ -574,7 +579,21 @@ class MockUnifiedAPI:
         # Mock data for special queries
         self.abandoned_tasks: list = []  # Raw dict data for abandoned tasks
         self.deleted_tasks: list = []    # Raw dict data for deleted tasks
-        self.habit_checkins: dict = {}   # Habit checkin data
+
+        # Habit data
+        self._habits: dict[str, Habit] = {}
+        self._habit_sections: list[HabitSection] = [
+            HabitSection(id="section_morning", name="_morning", sort_order=-196608),
+            HabitSection(id="section_afternoon", name="_afternoon", sort_order=-131072),
+            HabitSection(id="section_night", name="_night", sort_order=-65536),
+        ]
+        self._habit_preferences: HabitPreferences = HabitPreferences(
+            show_in_calendar=True,
+            show_in_today=True,
+            enabled=True,
+            default_section_order=0,
+        )
+        self._habit_checkins: dict[str, list[HabitCheckin]] = {}
 
         # Track method calls for verification
         self.call_history: list[tuple[str, tuple, dict]] = []
@@ -982,6 +1001,210 @@ class MockUnifiedAPI:
         self._record_call("get_focus_by_tag", (start_date, end_date), {})
         self._check_failure("get_focus_by_tag")
         return {"work": 7200, "study": 3600}
+
+    # -------------------------------------------------------------------------
+    # Habit Operations
+    # -------------------------------------------------------------------------
+
+    async def list_habits(self) -> list[Habit]:
+        """Mock list all habits."""
+        self._record_call("list_habits", (), {})
+        self._check_failure("list_habits")
+        return list(self._habits.values())
+
+    async def get_habit(self, habit_id: str) -> Habit:
+        """Mock get a habit by ID."""
+        self._record_call("get_habit", (habit_id,), {})
+        self._check_failure("get_habit")
+
+        if habit_id not in self._habits:
+            from ticktick_mcp.exceptions import TickTickNotFoundError
+            raise TickTickNotFoundError(f"Habit not found: {habit_id}")
+        return self._habits[habit_id]
+
+    async def list_habit_sections(self) -> list[HabitSection]:
+        """Mock list habit sections."""
+        self._record_call("list_habit_sections", (), {})
+        self._check_failure("list_habit_sections")
+        return self._habit_sections
+
+    async def get_habit_preferences(self) -> HabitPreferences:
+        """Mock get habit preferences."""
+        self._record_call("get_habit_preferences", (), {})
+        self._check_failure("get_habit_preferences")
+        return self._habit_preferences
+
+    async def create_habit(
+        self,
+        name: str,
+        *,
+        habit_type: str = "Boolean",
+        goal: float = 1.0,
+        step: float = 0.0,
+        unit: str = "Count",
+        icon: str = "habit_daily_check_in",
+        color: str = "#97E38B",
+        section_id: str | None = None,
+        repeat_rule: str = "RRULE:FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR,SA",
+        reminders: list[str] | None = None,
+        target_days: int = 0,
+        encouragement: str = "",
+    ) -> Habit:
+        """Mock create a habit."""
+        self._record_call("create_habit", (name,), {
+            "habit_type": habit_type, "goal": goal, "step": step, "unit": unit,
+            "icon": icon, "color": color, "section_id": section_id,
+            "repeat_rule": repeat_rule, "reminders": reminders,
+            "target_days": target_days, "encouragement": encouragement,
+        })
+        self._check_failure("create_habit")
+
+        import secrets
+        habit_id = secrets.token_hex(12)
+        habit = Habit(
+            id=habit_id,
+            name=name,
+            habit_type=habit_type,
+            goal=goal,
+            step=step,
+            unit=unit,
+            icon=icon,
+            color=color,
+            section_id=section_id,
+            repeat_rule=repeat_rule,
+            reminders=reminders or [],
+            target_days=target_days,
+            encouragement=encouragement,
+            total_checkins=0,
+            current_streak=0,
+            status=0,
+        )
+        self._habits[habit_id] = habit
+        return habit
+
+    async def update_habit(
+        self,
+        habit_id: str,
+        *,
+        name: str | None = None,
+        goal: float | None = None,
+        step: float | None = None,
+        unit: str | None = None,
+        icon: str | None = None,
+        color: str | None = None,
+        section_id: str | None = None,
+        repeat_rule: str | None = None,
+        reminders: list[str] | None = None,
+        target_days: int | None = None,
+        encouragement: str | None = None,
+    ) -> Habit:
+        """Mock update a habit."""
+        self._record_call("update_habit", (habit_id,), {
+            "name": name, "goal": goal, "step": step, "unit": unit,
+            "icon": icon, "color": color, "section_id": section_id,
+            "repeat_rule": repeat_rule, "reminders": reminders,
+            "target_days": target_days, "encouragement": encouragement,
+        })
+        self._check_failure("update_habit")
+
+        if habit_id not in self._habits:
+            from ticktick_mcp.exceptions import TickTickNotFoundError
+            raise TickTickNotFoundError(f"Habit not found: {habit_id}")
+
+        habit = self._habits[habit_id]
+        if name is not None:
+            habit.name = name
+        if goal is not None:
+            habit.goal = goal
+        if step is not None:
+            habit.step = step
+        if unit is not None:
+            habit.unit = unit
+        if icon is not None:
+            habit.icon = icon
+        if color is not None:
+            habit.color = color
+        if section_id is not None:
+            habit.section_id = section_id
+        if repeat_rule is not None:
+            habit.repeat_rule = repeat_rule
+        if reminders is not None:
+            habit.reminders = reminders
+        if target_days is not None:
+            habit.target_days = target_days
+        if encouragement is not None:
+            habit.encouragement = encouragement
+
+        return habit
+
+    async def delete_habit(self, habit_id: str) -> None:
+        """Mock delete a habit."""
+        self._record_call("delete_habit", (habit_id,), {})
+        self._check_failure("delete_habit")
+
+        if habit_id not in self._habits:
+            from ticktick_mcp.exceptions import TickTickNotFoundError
+            raise TickTickNotFoundError(f"Habit not found: {habit_id}")
+
+        del self._habits[habit_id]
+
+    async def checkin_habit(
+        self,
+        habit_id: str,
+        value: float = 1.0,
+    ) -> Habit:
+        """Mock check in a habit."""
+        self._record_call("checkin_habit", (habit_id,), {"value": value})
+        self._check_failure("checkin_habit")
+
+        if habit_id not in self._habits:
+            from ticktick_mcp.exceptions import TickTickNotFoundError
+            raise TickTickNotFoundError(f"Habit not found: {habit_id}")
+
+        habit = self._habits[habit_id]
+        habit.total_checkins += int(value)
+        habit.current_streak += 1
+        return habit
+
+    async def archive_habit(self, habit_id: str) -> Habit:
+        """Mock archive a habit."""
+        self._record_call("archive_habit", (habit_id,), {})
+        self._check_failure("archive_habit")
+
+        if habit_id not in self._habits:
+            from ticktick_mcp.exceptions import TickTickNotFoundError
+            raise TickTickNotFoundError(f"Habit not found: {habit_id}")
+
+        habit = self._habits[habit_id]
+        habit.status = 2  # Archived
+        return habit
+
+    async def unarchive_habit(self, habit_id: str) -> Habit:
+        """Mock unarchive a habit."""
+        self._record_call("unarchive_habit", (habit_id,), {})
+        self._check_failure("unarchive_habit")
+
+        if habit_id not in self._habits:
+            from ticktick_mcp.exceptions import TickTickNotFoundError
+            raise TickTickNotFoundError(f"Habit not found: {habit_id}")
+
+        habit = self._habits[habit_id]
+        habit.status = 0  # Active
+        return habit
+
+    async def get_habit_checkins(
+        self,
+        habit_ids: list[str],
+        after_stamp: int = 0,
+    ) -> dict[str, list[HabitCheckin]]:
+        """Mock get habit check-ins."""
+        self._record_call("get_habit_checkins", (habit_ids,), {"after_stamp": after_stamp})
+        self._check_failure("get_habit_checkins")
+
+        result: dict[str, list[HabitCheckin]] = {}
+        for habit_id in habit_ids:
+            result[habit_id] = self._habit_checkins.get(habit_id, [])
+        return result
 
     # -------------------------------------------------------------------------
     # Sync Operations

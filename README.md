@@ -1,4 +1,4 @@
-# ticktick-sdk
+# ticktick-sdk: A TickTick MCP Server & Full Python SDK
 
 [![PyPI version](https://badge.fury.io/py/ticktick-sdk.svg)](https://pypi.org/project/ticktick-sdk/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)

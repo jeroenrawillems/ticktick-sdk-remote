@@ -340,6 +340,58 @@ class TickTickClient:
         """
         await self._api.set_task_parent(task_id, project_id, parent_id)
 
+    async def unparent_subtask(
+        self,
+        task_id: str,
+        project_id: str,
+    ) -> None:
+        """
+        Remove a subtask from its parent (make it a top-level task).
+
+        Args:
+            task_id: Subtask to unparent
+            project_id: Project ID
+
+        Raises:
+            TickTickNotFoundError: If the task does not exist
+            TickTickAPIError: If the task is not a subtask
+        """
+        await self._api.unset_task_parent(task_id, project_id)
+
+    async def get_abandoned_tasks(
+        self,
+        days: int = 7,
+        limit: int = 100,
+    ) -> list[Task]:
+        """
+        Get recently abandoned ("won't do") tasks.
+
+        Args:
+            days: Number of days to look back
+            limit: Maximum number of tasks
+
+        Returns:
+            List of abandoned tasks
+        """
+        to_date = datetime.now()
+        from_date = to_date - timedelta(days=days)
+        return await self._api.list_abandoned_tasks(from_date, to_date, limit)
+
+    async def get_deleted_tasks(
+        self,
+        limit: int = 100,
+    ) -> list[Task]:
+        """
+        Get deleted tasks (in trash).
+
+        Args:
+            limit: Maximum number of tasks
+
+        Returns:
+            List of deleted tasks
+        """
+        return await self._api.list_deleted_tasks(0, limit)
+
     # =========================================================================
     # Projects
     # =========================================================================
@@ -407,6 +459,33 @@ class TickTickClient:
             group_id=folder_id,
         )
 
+    async def update_project(
+        self,
+        project_id: str,
+        *,
+        name: str | None = None,
+        color: str | None = None,
+        folder_id: str | None = None,
+    ) -> Project:
+        """
+        Update a project's properties.
+
+        Args:
+            project_id: Project ID
+            name: New name
+            color: New hex color (e.g., "#F18181")
+            folder_id: New folder ID (use "NONE" to remove from folder)
+
+        Returns:
+            Updated project
+        """
+        return await self._api.update_project(
+            project_id=project_id,
+            name=name,
+            color=color,
+            folder_id=folder_id,
+        )
+
     async def delete_project(self, project_id: str) -> None:
         """
         Delete a project.
@@ -440,6 +519,19 @@ class TickTickClient:
             Created folder
         """
         return await self._api.create_project_group(name)
+
+    async def rename_folder(self, folder_id: str, name: str) -> ProjectGroup:
+        """
+        Rename a folder.
+
+        Args:
+            folder_id: Folder ID
+            name: New name
+
+        Returns:
+            Updated folder
+        """
+        return await self._api.update_project_group(folder_id, name)
 
     async def delete_folder(self, folder_id: str) -> None:
         """
@@ -482,6 +574,26 @@ class TickTickClient:
             Created tag
         """
         return await self._api.create_tag(name, color=color, parent=parent)
+
+    async def update_tag(
+        self,
+        name: str,
+        *,
+        color: str | None = None,
+        parent: str | None = None,
+    ) -> Tag:
+        """
+        Update a tag's properties.
+
+        Args:
+            name: Tag name (lowercase identifier)
+            color: New hex color
+            parent: New parent tag name (or None to remove parent)
+
+        Returns:
+            Updated tag
+        """
+        return await self._api.update_tag(name, color=color, parent=parent)
 
     async def delete_tag(self, name: str) -> None:
         """
@@ -543,6 +655,22 @@ class TickTickClient:
         """
         return await self._api.get_user_statistics()
 
+    async def get_preferences(self) -> dict[str, Any]:
+        """
+        Get user preferences and settings.
+
+        Returns:
+            User preferences dictionary containing settings like:
+            - timeZone: User's timezone
+            - weekStartDay: First day of week (0=Sunday, 1=Monday, etc.)
+            - startOfDay: Hour when day starts
+            - dateFormat: Date display format
+            - timeFormat: Time display format (12h/24h)
+            - defaultReminder: Default reminder setting
+            - And many more user-configurable options
+        """
+        return await self._api.get_user_preferences()
+
     # =========================================================================
     # Focus/Pomodoro
     # =========================================================================
@@ -592,6 +720,32 @@ class TickTickClient:
         if start_date is None:
             start_date = end_date - timedelta(days=days)
         return await self._api.get_focus_by_tag(start_date, end_date)
+
+    # =========================================================================
+    # Habits
+    # =========================================================================
+
+    async def get_habit_checkins(
+        self,
+        habit_ids: list[str],
+        after_timestamp: int = 0,
+    ) -> dict[str, Any]:
+        """
+        Get habit check-in data.
+
+        Args:
+            habit_ids: List of habit IDs to query
+            after_timestamp: Unix timestamp to get check-ins after (0 for all)
+
+        Returns:
+            Habit check-in data dictionary with:
+            - checkins: List of check-in records
+            - Each checkin contains habitId, checkinTime, value, etc.
+
+        Note:
+            To get habit IDs, use sync() and look at the 'habits' field.
+        """
+        return await self._api.get_habit_checkins(habit_ids, after_timestamp)
 
     # =========================================================================
     # Convenience Methods

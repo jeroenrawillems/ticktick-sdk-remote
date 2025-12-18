@@ -731,6 +731,31 @@ class MockUnifiedAPI:
 
         return completed[:limit]
 
+    async def list_abandoned_tasks(
+        self,
+        from_date: datetime,
+        to_date: datetime,
+        limit: int = 100,
+    ) -> list[Task]:
+        """Mock list abandoned (won't do) tasks."""
+        self._record_call("list_abandoned_tasks", (from_date, to_date), {"limit": limit})
+        self._check_failure("list_abandoned_tasks")
+
+        # Return pre-configured abandoned tasks (converted from raw dict data)
+        return [Task.from_v2(t) for t in self.abandoned_tasks[:limit]]
+
+    async def list_deleted_tasks(
+        self,
+        start: int = 0,
+        limit: int = 100,
+    ) -> list[Task]:
+        """Mock list deleted tasks (trash)."""
+        self._record_call("list_deleted_tasks", (start,), {"limit": limit})
+        self._check_failure("list_deleted_tasks")
+
+        # Return pre-configured deleted tasks (converted from raw dict data)
+        return [Task.from_v2(t) for t in self.deleted_tasks[start:start + limit]]
+
     async def move_task(
         self,
         task_id: str,
@@ -767,6 +792,35 @@ class MockUnifiedAPI:
             parent = self.tasks[parent_id]
             if task_id not in parent.child_ids:
                 parent.child_ids.append(task_id)
+
+    async def unset_task_parent(
+        self,
+        task_id: str,
+        project_id: str,
+    ) -> None:
+        """Mock unset task parent (remove subtask from parent)."""
+        self._record_call("unset_task_parent", (task_id, project_id), {})
+        self._check_failure("unset_task_parent")
+
+        if task_id not in self.tasks:
+            from ticktick_mcp.exceptions import TickTickNotFoundError
+            raise TickTickNotFoundError(f"Task not found: {task_id}")
+
+        task = self.tasks[task_id]
+        parent_id = task.parent_id
+
+        if not parent_id:
+            from ticktick_mcp.exceptions import TickTickAPIError
+            raise TickTickAPIError(f"Task {task_id} is not a subtask (has no parent)")
+
+        # Remove from parent's child list
+        if parent_id in self.tasks:
+            parent = self.tasks[parent_id]
+            if task_id in parent.child_ids:
+                parent.child_ids.remove(task_id)
+
+        # Clear parent reference
+        task.parent_id = None
 
     # -------------------------------------------------------------------------
     # Project Operations

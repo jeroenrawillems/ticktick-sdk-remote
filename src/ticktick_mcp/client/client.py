@@ -24,6 +24,10 @@ from ticktick_mcp.models import (
     User,
     UserStatus,
     UserStatistics,
+    Habit,
+    HabitSection,
+    HabitCheckin,
+    HabitPreferences,
 )
 from ticktick_mcp.settings import TickTickSettings, get_settings
 from ticktick_mcp.unified import UnifiedTickTickAPI
@@ -725,27 +729,233 @@ class TickTickClient:
     # Habits
     # =========================================================================
 
+    async def get_all_habits(self) -> list[Habit]:
+        """
+        Get all habits.
+
+        Returns:
+            List of habits
+        """
+        return await self._api.list_habits()
+
+    async def get_habit(self, habit_id: str) -> Habit:
+        """
+        Get a habit by ID.
+
+        Args:
+            habit_id: Habit ID
+
+        Returns:
+            Habit object
+
+        Raises:
+            TickTickNotFoundError: If habit not found
+        """
+        return await self._api.get_habit(habit_id)
+
+    async def get_habit_sections(self) -> list[HabitSection]:
+        """
+        Get habit sections (time-of-day groupings).
+
+        Returns:
+            List of habit sections (_morning, _afternoon, _night)
+        """
+        return await self._api.list_habit_sections()
+
+    async def get_habit_preferences(self) -> HabitPreferences:
+        """
+        Get habit preferences/settings.
+
+        Returns:
+            Habit preferences (showInCalendar, showInToday, enabled, etc.)
+        """
+        return await self._api.get_habit_preferences()
+
+    async def create_habit(
+        self,
+        name: str,
+        *,
+        habit_type: str = "Boolean",
+        goal: float = 1.0,
+        step: float = 0.0,
+        unit: str = "Count",
+        icon: str = "habit_daily_check_in",
+        color: str = "#97E38B",
+        section_id: str | None = None,
+        repeat_rule: str = "RRULE:FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR,SA",
+        reminders: list[str] | None = None,
+        target_days: int = 0,
+        encouragement: str = "",
+    ) -> Habit:
+        """
+        Create a new habit.
+
+        Args:
+            name: Habit name
+            habit_type: "Boolean" for yes/no, "Real" for numeric
+            goal: Target goal value (1.0 for boolean)
+            step: Increment step for numeric habits
+            unit: Unit of measurement
+            icon: Icon resource name
+            color: Hex color
+            section_id: Time-of-day section ID
+            repeat_rule: RRULE recurrence pattern
+            reminders: List of reminder times ("HH:MM")
+            target_days: Goal in days (0 = no target)
+            encouragement: Motivational message
+
+        Returns:
+            Created habit
+        """
+        return await self._api.create_habit(
+            name=name,
+            habit_type=habit_type,
+            goal=goal,
+            step=step,
+            unit=unit,
+            icon=icon,
+            color=color,
+            section_id=section_id,
+            repeat_rule=repeat_rule,
+            reminders=reminders,
+            target_days=target_days,
+            encouragement=encouragement,
+        )
+
+    async def update_habit(
+        self,
+        habit_id: str,
+        *,
+        name: str | None = None,
+        goal: float | None = None,
+        step: float | None = None,
+        unit: str | None = None,
+        icon: str | None = None,
+        color: str | None = None,
+        section_id: str | None = None,
+        repeat_rule: str | None = None,
+        reminders: list[str] | None = None,
+        target_days: int | None = None,
+        encouragement: str | None = None,
+    ) -> Habit:
+        """
+        Update a habit.
+
+        Args:
+            habit_id: Habit ID
+            name: New name
+            goal: New goal
+            step: New step
+            unit: New unit
+            icon: New icon
+            color: New color
+            section_id: New section ID
+            repeat_rule: New repeat rule
+            reminders: New reminders
+            target_days: New target days
+            encouragement: New encouragement
+
+        Returns:
+            Updated habit
+
+        Raises:
+            TickTickNotFoundError: If habit not found
+        """
+        return await self._api.update_habit(
+            habit_id=habit_id,
+            name=name,
+            goal=goal,
+            step=step,
+            unit=unit,
+            icon=icon,
+            color=color,
+            section_id=section_id,
+            repeat_rule=repeat_rule,
+            reminders=reminders,
+            target_days=target_days,
+            encouragement=encouragement,
+        )
+
+    async def delete_habit(self, habit_id: str) -> None:
+        """
+        Delete a habit.
+
+        Args:
+            habit_id: Habit ID
+
+        Raises:
+            TickTickNotFoundError: If habit not found
+        """
+        await self._api.delete_habit(habit_id)
+
+    async def checkin_habit(
+        self,
+        habit_id: str,
+        value: float = 1.0,
+    ) -> Habit:
+        """
+        Check in a habit (complete it for today).
+
+        This increments the habit's totalCheckIns and currentStreak.
+
+        Args:
+            habit_id: Habit ID
+            value: Check-in value (1.0 for boolean habits)
+
+        Returns:
+            Updated habit
+
+        Raises:
+            TickTickNotFoundError: If habit not found
+        """
+        return await self._api.checkin_habit(habit_id, value)
+
+    async def archive_habit(self, habit_id: str) -> Habit:
+        """
+        Archive a habit.
+
+        Args:
+            habit_id: Habit ID
+
+        Returns:
+            Updated habit
+
+        Raises:
+            TickTickNotFoundError: If habit not found
+        """
+        return await self._api.archive_habit(habit_id)
+
+    async def unarchive_habit(self, habit_id: str) -> Habit:
+        """
+        Unarchive a habit.
+
+        Args:
+            habit_id: Habit ID
+
+        Returns:
+            Updated habit
+
+        Raises:
+            TickTickNotFoundError: If habit not found
+        """
+        return await self._api.unarchive_habit(habit_id)
+
     async def get_habit_checkins(
         self,
         habit_ids: list[str],
-        after_timestamp: int = 0,
-    ) -> dict[str, Any]:
+        after_stamp: int = 0,
+    ) -> dict[str, list[HabitCheckin]]:
         """
         Get habit check-in data.
 
         Args:
             habit_ids: List of habit IDs to query
-            after_timestamp: Unix timestamp to get check-ins after (0 for all)
+            after_stamp: Date stamp (YYYYMMDD) to get check-ins after (0 for all)
 
         Returns:
-            Habit check-in data dictionary with:
-            - checkins: List of check-in records
-            - Each checkin contains habitId, checkinTime, value, etc.
-
-        Note:
-            To get habit IDs, use sync() and look at the 'habits' field.
+            Dict mapping habit IDs to lists of check-in records
         """
-        return await self._api.get_habit_checkins(habit_ids, after_timestamp)
+        return await self._api.get_habit_checkins(habit_ids, after_stamp)
 
     # =========================================================================
     # Convenience Methods

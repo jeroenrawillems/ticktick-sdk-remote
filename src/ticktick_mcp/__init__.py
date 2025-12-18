@@ -65,7 +65,7 @@ __author__ = "TickTick MCP Contributors"
 # Main client - primary entry point for library usage
 from ticktick_mcp.client import TickTickClient
 
-# Models - data structures for tasks, projects, tags, etc.
+# Models - data structures for tasks, projects, tags, habits, etc.
 from ticktick_mcp.models import (
     Task,
     ChecklistItem,
@@ -78,6 +78,10 @@ from ticktick_mcp.models import (
     User,
     UserStatus,
     UserStatistics,
+    Habit,
+    HabitSection,
+    HabitCheckin,
+    HabitPreferences,
 )
 
 # Exceptions - for error handling
@@ -122,6 +126,10 @@ __all__ = [
     "User",
     "UserStatus",
     "UserStatistics",
+    "Habit",
+    "HabitSection",
+    "HabitCheckin",
+    "HabitPreferences",
     # Exceptions
     "TickTickError",
     "TickTickAuthenticationError",

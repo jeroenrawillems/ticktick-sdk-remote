@@ -23,6 +23,7 @@ A comprehensive async Python SDK for [TickTick](https://ticktick.com) with [MCP]
   - [Focus/Pomodoro](#focuspomodoro)
   - [User & Statistics](#user--statistics)
 - [Usage: MCP Server](#usage-mcp-server)
+  - [CLI Reference](#cli-reference)
 - [Architecture](#architecture)
 - [API Reference](#api-reference)
 - [TickTick API Quirks](#important-ticktick-api-quirks)
@@ -156,14 +157,10 @@ TICKTICK_TIMEOUT=30  # Request timeout in seconds
 
 ### Step 3: Get Your OAuth2 Access Token
 
-Run the included helper script:
+Run the auth command:
 
 ```bash
-# Activate your virtual environment first
-source .venv/bin/activate
-
-# Run the OAuth flow
-python scripts/get_oauth_token.py
+ticktick-sdk auth
 ```
 
 This will:
@@ -177,7 +174,7 @@ This will:
 TICKTICK_ACCESS_TOKEN=paste_your_token_here
 ```
 
-> **SSH/Headless Users**: Use `python scripts/get_oauth_token.py --manual` for a text-based flow.
+> **SSH/Headless Users**: Use `ticktick-sdk auth --manual` for a text-based flow that doesn't require a browser.
 
 ### Step 4: Verify Setup
 
@@ -721,12 +718,11 @@ The easiest way to use the MCP server with [Claude Code](https://claude.ai/claud
 ```bash
 # Add the server with your credentials
 claude mcp add ticktick \
-  --transport stdio \
-  --env TICKTICK_CLIENT_ID=your_client_id \
-  --env TICKTICK_CLIENT_SECRET=your_client_secret \
-  --env TICKTICK_ACCESS_TOKEN=your_access_token \
-  --env TICKTICK_USERNAME=your_email \
-  --env TICKTICK_PASSWORD=your_password \
+  -e TICKTICK_CLIENT_ID=your_client_id \
+  -e TICKTICK_CLIENT_SECRET=your_client_secret \
+  -e TICKTICK_ACCESS_TOKEN=your_access_token \
+  -e TICKTICK_USERNAME=your_email \
+  -e TICKTICK_PASSWORD=your_password \
   -- ticktick-sdk
 ```
 
@@ -734,12 +730,11 @@ Or if installed from source:
 
 ```bash
 claude mcp add ticktick \
-  --transport stdio \
-  --env TICKTICK_CLIENT_ID=your_client_id \
-  --env TICKTICK_CLIENT_SECRET=your_client_secret \
-  --env TICKTICK_ACCESS_TOKEN=your_access_token \
-  --env TICKTICK_USERNAME=your_email \
-  --env TICKTICK_PASSWORD=your_password \
+  -e TICKTICK_CLIENT_ID=your_client_id \
+  -e TICKTICK_CLIENT_SECRET=your_client_secret \
+  -e TICKTICK_ACCESS_TOKEN=your_access_token \
+  -e TICKTICK_USERNAME=your_email \
+  -e TICKTICK_PASSWORD=your_password \
   -- /path/to/ticktick-sdk/.venv/bin/ticktick-sdk
 ```
 
@@ -799,6 +794,35 @@ Or if using a virtual environment:
 ```bash
 # Make sure your .env is configured, then run:
 ticktick-sdk
+```
+
+### CLI Reference
+
+The `ticktick-sdk` command provides several subcommands:
+
+| Command | Description |
+|---------|-------------|
+| `ticktick-sdk` | Start the MCP server (default) |
+| `ticktick-sdk server` | Start the MCP server (explicit) |
+| `ticktick-sdk auth` | Get OAuth2 access token (opens browser) |
+| `ticktick-sdk auth --manual` | Get OAuth2 access token (SSH-friendly) |
+| `ticktick-sdk --version` | Show version information |
+| `ticktick-sdk --help` | Show help message |
+
+**Examples:**
+
+```bash
+# Start the MCP server for AI assistant integration
+ticktick-sdk
+
+# Get OAuth2 token (opens browser for authorization)
+ticktick-sdk auth
+
+# Get OAuth2 token in SSH/headless environments
+ticktick-sdk auth --manual
+
+# Check version
+ticktick-sdk --version
 ```
 
 ### Example Conversations

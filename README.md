@@ -136,9 +136,31 @@ ticktick-sdk auth
 ```
 
 This will:
-1. Open your browser to TickTick's authorization page
-2. Wait for you to authorize the app
-3. Display the access token and next steps
+1. **Open your browser** to TickTick's authorization page
+2. **Authorize the app** - Click "Authorize" to grant access
+3. **Return to terminal** - After authorizing, you'll see output like this:
+
+```
+============================================================
+  SUCCESS! Here is your access token:
+============================================================
+
+a]234abc-5678-90de-f012-34567890abcd
+
+============================================================
+
+NEXT STEPS:
+
+For Claude Code users:
+  Run (replace YOUR_* placeholders):
+    claude mcp add ticktick \
+      -e TICKTICK_CLIENT_ID=YOUR_CLIENT_ID \
+      ...
+```
+
+4. **Copy this token** - You'll need it in the next step
+
+> **Note**: Sometimes the browser shows an "invalid credentials" error page. Just refresh the page and it should work.
 
 > **SSH/Headless Users**: Add `--manual` flag for a text-based flow that doesn't require a browser.
 
@@ -155,6 +177,8 @@ claude mcp add ticktick \
   -e TICKTICK_PASSWORD=your_password \
   -- ticktick-sdk
 ```
+
+> **Note**: For `TICKTICK_ACCESS_TOKEN`, paste the token you copied from Step 2.
 
 Verify it's working:
 
@@ -186,6 +210,10 @@ Add to your Claude Desktop config:
   }
 }
 ```
+
+#### Other MCP-Compatible Tools
+
+This server works with any tool that supports the Model Context Protocol, which includes most modern AI assistants and IDEs. The configuration is similar - you just need to provide the command (`ticktick-sdk`) and the environment variables shown above.
 
 ### CLI Reference
 

@@ -11,7 +11,7 @@ and converts between unified models and API-specific formats.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from types import TracebackType
 from typing import Any, TypeVar
 
@@ -119,6 +119,86 @@ def _check_batch_response_errors(
             f"{operation} failed: {error_msg}",
             details={"resource_id": resource_id, "error": error_msg},
         )
+
+
+def _calculate_streak_from_checkins(
+    checkins: list[HabitCheckin],
+    reference_date: date | None = None,
+) -> int:
+    """
+    Calculate current streak from check-in records.
+
+    A streak is the count of consecutive days with completed check-ins (status=2),
+    ending at the reference date or the day before if the reference date has no
+    check-in.
+
+    This matches the behavior of the TickTick web app, which calculates streaks
+    client-side based on check-in records.
+
+    Args:
+        checkins: List of HabitCheckin records for the habit
+        reference_date: The date to calculate streak from (default: today)
+
+    Returns:
+        The current streak count (0 if no streak)
+
+    Example:
+        If today is Dec 21 and check-ins exist for Dec 21, 20, 19, 18 (all completed),
+        the streak is 4. If Dec 19 was not completed, streak would be 2 (Dec 21, 20).
+    """
+    if not checkins:
+        return 0
+
+    if reference_date is None:
+        reference_date = date.today()
+
+    # Build a set of completed check-in dates (status=2 means completed)
+    # checkin_stamp is in YYYYMMDD format (int)
+    completed_stamps: set[int] = {
+        c.checkin_stamp for c in checkins if c.status == 2
+    }
+
+    if not completed_stamps:
+        return 0
+
+    # Convert reference_date to stamp format
+    def date_to_stamp(d: date) -> int:
+        return int(d.strftime("%Y%m%d"))
+
+    # Start from reference_date
+    current_date = reference_date
+    current_stamp = date_to_stamp(current_date)
+
+    # If reference_date is not completed, try the day before
+    # (streak can still be valid if yesterday is completed)
+    if current_stamp not in completed_stamps:
+        current_date = current_date - timedelta(days=1)
+        current_stamp = date_to_stamp(current_date)
+        if current_stamp not in completed_stamps:
+            # Neither today nor yesterday completed - no active streak
+            return 0
+
+    # Count consecutive completed days going backwards
+    streak = 0
+    while current_stamp in completed_stamps:
+        streak += 1
+        current_date = current_date - timedelta(days=1)
+        current_stamp = date_to_stamp(current_date)
+
+    return streak
+
+
+def _count_total_checkins(checkins: list[HabitCheckin]) -> int:
+    """
+    Count total completed check-ins.
+
+    Args:
+        checkins: List of HabitCheckin records
+
+    Returns:
+        Count of check-ins with status=2 (completed)
+    """
+    return sum(1 for c in checkins if c.status == 2)
 
 
 class UnifiedTickTickAPI:
@@ -1643,127 +1723,99 @@ class UnifiedTickTickAPI:
 
         V2-only operation.
 
-        If checkin_date is None or today, increments both totalCheckIns and
-        currentStreak. If checkin_date is a past date (backdating), only
-        increments totalCheckIns and creates a check-in record.
+        This method properly calculates streaks by:
+        1. Creating a check-in record for the specified date
+        2. Fetching all check-in records for the habit
+        3. Calculating the streak from the actual records
+        4. Updating the habit with the calculated values
+
+        This matches the behavior of the TickTick web app, which calculates
+        streaks client-side based on check-in records.
 
         Args:
             habit_id: Habit ID
             value: Check-in value (1.0 for boolean habits)
-            checkin_date: Date to check in for (None = today)
+            checkin_date: Date to check in for (None = today).
+                          Backdating (past dates) is fully supported.
 
         Returns:
-            Updated habit with preserved name and updated counters
+            Updated habit with correctly calculated streak and total
 
         Raises:
             TickTickNotFoundError: If habit not found
         """
         self._ensure_initialized()
 
-        # Get current habit to know current stats AND preserve its data
+        # Determine the target date
+        today = date.today()
+        target_date = checkin_date if checkin_date is not None else today
+
+        # Get current habit to preserve its data
         # (The API may return habits with null names after update operations)
         original_habit = await self.get_habit(habit_id)
 
-        # Determine if this is a backdate operation
-        today = date.today()
-        is_backdate = checkin_date is not None and checkin_date < today
+        # Step 1: Create the check-in record
+        checkin_stamp = int(target_date.strftime("%Y%m%d"))
+        checkin_id = _generate_object_id()
 
-        if is_backdate:
-            # Backdating: Create check-in record + update only totalCheckIns
-            checkin_stamp = int(checkin_date.strftime("%Y%m%d"))
-            checkin_id = _generate_object_id()
+        await self._v2_client.create_habit_checkin(  # type: ignore
+            checkin_id=checkin_id,
+            habit_id=habit_id,
+            checkin_stamp=checkin_stamp,
+            value=value,
+            goal=original_habit.goal,
+        )
 
-            # Step 1: Create the check-in record
-            await self._v2_client.create_habit_checkin(  # type: ignore
-                checkin_id=checkin_id,
-                habit_id=habit_id,
-                checkin_stamp=checkin_stamp,
-                value=value,
-                goal=original_habit.goal,
-            )
+        # Step 2: Fetch ALL check-in records for this habit
+        # We need all records to calculate the streak correctly
+        checkins_data = await self.get_habit_checkins([habit_id], after_stamp=0)
+        all_checkins = checkins_data.get(habit_id, [])
 
-            # Step 2: Update habit's totalCheckIns only (not streak for past dates)
-            response = await self._v2_client.update_habit(  # type: ignore
-                habit_id=habit_id,
-                name=original_habit.name,  # Preserve name!
-                total_checkins=original_habit.total_checkins + int(value),
-                # Note: currentStreak is NOT incremented for backdated check-ins
-            )
+        # Step 3: Calculate streak and total from the actual records
+        # This ensures accuracy even when backdating extends a streak
+        calculated_streak = _calculate_streak_from_checkins(all_checkins, today)
+        calculated_total = _count_total_checkins(all_checkins)
 
-            _check_batch_response_errors(response, "checkin_habit", [habit_id])
+        # Step 4: Update habit with calculated values
+        response = await self._v2_client.update_habit(  # type: ignore
+            habit_id=habit_id,
+            name=original_habit.name,  # Preserve name!
+            total_checkins=calculated_total,
+            current_streak=calculated_streak,
+        )
 
-            # Return habit with updated totalCheckIns but unchanged streak
-            return Habit(
-                id=original_habit.id,
-                name=original_habit.name,
-                icon=original_habit.icon,
-                color=original_habit.color,
-                sort_order=original_habit.sort_order,
-                status=original_habit.status,
-                encouragement=original_habit.encouragement,
-                total_checkins=original_habit.total_checkins + int(value),
-                created_time=original_habit.created_time,
-                modified_time=original_habit.modified_time,
-                archived_time=original_habit.archived_time,
-                habit_type=original_habit.habit_type,
-                goal=original_habit.goal,
-                step=original_habit.step,
-                unit=original_habit.unit,
-                etag=original_habit.etag,
-                repeat_rule=original_habit.repeat_rule,
-                reminders=original_habit.reminders,
-                record_enable=original_habit.record_enable,
-                section_id=original_habit.section_id,
-                target_days=original_habit.target_days,
-                target_start_date=original_habit.target_start_date,
-                completed_cycles=original_habit.completed_cycles,
-                ex_dates=original_habit.ex_dates,
-                current_streak=original_habit.current_streak,  # Unchanged
-                style=original_habit.style,
-            )
-        else:
-            # Today's check-in: Use existing fast path
-            # Use update_habit directly instead of checkin_habit to preserve the name
-            # (The API nullifies fields that aren't sent in update operations)
-            response = await self._v2_client.update_habit(  # type: ignore
-                habit_id=habit_id,
-                name=original_habit.name,  # Preserve name!
-                total_checkins=original_habit.total_checkins + int(value),
-                current_streak=original_habit.current_streak + 1,
-            )
+        _check_batch_response_errors(response, "checkin_habit", [habit_id])
 
-            _check_batch_response_errors(response, "checkin_habit", [habit_id])
-
-            # Return a habit with updated counters but preserved original data
-            # This avoids the issue where the API returns null for name after updates
-            return Habit(
-                id=original_habit.id,
-                name=original_habit.name,
-                icon=original_habit.icon,
-                color=original_habit.color,
-                sort_order=original_habit.sort_order,
-                status=original_habit.status,
-                encouragement=original_habit.encouragement,
-                total_checkins=original_habit.total_checkins + int(value),
-                created_time=original_habit.created_time,
-                modified_time=original_habit.modified_time,
-                archived_time=original_habit.archived_time,
-                habit_type=original_habit.habit_type,
-                goal=original_habit.goal,
-                step=original_habit.step,
-                unit=original_habit.unit,
-                etag=original_habit.etag,
-                repeat_rule=original_habit.repeat_rule,
-                reminders=original_habit.reminders,
-                record_enable=original_habit.record_enable,
-                section_id=original_habit.section_id,
-                target_days=original_habit.target_days,
-                target_start_date=original_habit.target_start_date,
-                completed_cycles=original_habit.completed_cycles,
-                ex_dates=original_habit.ex_dates,
-                current_streak=original_habit.current_streak + 1,
-                style=original_habit.style,
-            )
+        # Return habit with calculated counters but preserved original data
+        # This avoids the issue where the API returns null for name after updates
+        return Habit(
+            id=original_habit.id,
+            name=original_habit.name,
+            icon=original_habit.icon,
+            color=original_habit.color,
+            sort_order=original_habit.sort_order,
+            status=original_habit.status,
+            encouragement=original_habit.encouragement,
+            total_checkins=calculated_total,
+            created_time=original_habit.created_time,
+            modified_time=original_habit.modified_time,
+            archived_time=original_habit.archived_time,
+            habit_type=original_habit.habit_type,
+            goal=original_habit.goal,
+            step=original_habit.step,
+            unit=original_habit.unit,
+            etag=original_habit.etag,
+            repeat_rule=original_habit.repeat_rule,
+            reminders=original_habit.reminders,
+            record_enable=original_habit.record_enable,
+            section_id=original_habit.section_id,
+            target_days=original_habit.target_days,
+            target_start_date=original_habit.target_start_date,
+            completed_cycles=original_habit.completed_cycles,
+            ex_dates=original_habit.ex_dates,
+            current_streak=calculated_streak,
+            style=original_habit.style,
+        )
 
     async def archive_habit(self, habit_id: str) -> Habit:
         """

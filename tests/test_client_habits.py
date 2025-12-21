@@ -313,15 +313,16 @@ class TestCheckinHabit:
                 name="Exercise",
                 habit_type="Boolean",
                 goal=1.0,
-                total_checkins=10,
-                current_streak=3,
+                total_checkins=0,
+                current_streak=0,
             ),
         }
 
         habit = await client.checkin_habit("habit1")
 
-        assert habit.total_checkins == 11
-        assert habit.current_streak == 4
+        # Check-in creates a record and calculates from records
+        assert habit.total_checkins == 1
+        assert habit.current_streak == 1
 
     @pytest.mark.mock_only
     async def test_checkin_numeric_habit_with_value(self, client: TickTickClient, mock_api: MockUnifiedAPI):
@@ -332,16 +333,17 @@ class TestCheckinHabit:
                 name="Read",
                 habit_type="Real",
                 goal=30.0,
-                total_checkins=5,
-                current_streak=2,
+                total_checkins=0,
+                current_streak=0,
             ),
         }
 
         habit = await client.checkin_habit("habit1", value=10.0)
 
-        # Value is added as integer to total_checkins
-        assert habit.total_checkins == 15
-        assert habit.current_streak == 3
+        # Check-in creates a record and calculates from records
+        # Total is count of completed records (1), not the value
+        assert habit.total_checkins == 1
+        assert habit.current_streak == 1
 
 
 # =============================================================================

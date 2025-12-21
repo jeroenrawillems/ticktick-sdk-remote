@@ -47,6 +47,7 @@ from ticktick_sdk.models import (
     HabitPreferences,
 )
 from ticktick_sdk.constants import TaskStatus, TaskPriority, ProjectKind, ViewMode
+from ticktick_sdk.unified.api import _calculate_streak_from_checkins, _count_total_checkins
 
 
 # =============================================================================
@@ -1208,7 +1209,14 @@ class MockUnifiedAPI:
         value: float = 1.0,
         checkin_date: date | None = None,
     ) -> Habit:
-        """Mock check in a habit."""
+        """
+        Mock check in a habit.
+
+        This properly simulates the real behavior:
+        1. Creates a check-in record
+        2. Calculates streak from all records
+        3. Updates habit with calculated values
+        """
         self._record_call("checkin_habit", (habit_id,), {"value": value, "checkin_date": checkin_date})
         self._check_failure("checkin_habit")
 
@@ -1217,11 +1225,34 @@ class MockUnifiedAPI:
             raise TickTickNotFoundError(f"Habit not found: {habit_id}")
 
         habit = self._habits[habit_id]
-        habit.total_checkins += int(value)
-        # Only increment streak for today's check-ins (not backdated)
-        is_backdate = checkin_date is not None and checkin_date < date.today()
-        if not is_backdate:
-            habit.current_streak += 1
+        today = date.today()
+        target_date = checkin_date if checkin_date is not None else today
+
+        # Create check-in record
+        checkin_stamp = int(target_date.strftime("%Y%m%d"))
+        checkin = HabitCheckin(
+            habit_id=habit_id,
+            checkin_stamp=checkin_stamp,
+            checkin_time=datetime.now(timezone.utc),
+            value=value,
+            goal=habit.goal,
+            status=2,  # completed
+        )
+
+        # Store check-in record
+        if habit_id not in self._habit_checkins:
+            self._habit_checkins[habit_id] = []
+        self._habit_checkins[habit_id].append(checkin)
+
+        # Calculate streak and total from records (matches real implementation)
+        all_checkins = self._habit_checkins.get(habit_id, [])
+        calculated_streak = _calculate_streak_from_checkins(all_checkins, today)
+        calculated_total = _count_total_checkins(all_checkins)
+
+        # Update habit with calculated values
+        habit.total_checkins = calculated_total
+        habit.current_streak = calculated_streak
+
         return habit
 
     async def archive_habit(self, habit_id: str) -> Habit:

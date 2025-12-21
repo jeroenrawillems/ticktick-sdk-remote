@@ -51,7 +51,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any
 from urllib.parse import quote
 
@@ -60,6 +60,7 @@ import httpx
 from ticktick_sdk.api.base import BaseTickTickClient
 from ticktick_sdk.api.v2.auth import SessionHandler, SessionToken
 from ticktick_sdk.api.v2.types import (
+    BatchHabitCheckinRequestV2,
     BatchHabitRequestV2,
     BatchResponseV2,
     BatchTaskParentResponseV2,
@@ -69,6 +70,7 @@ from ticktick_sdk.api.v2.types import (
     BatchTagRequestV2,
     FocusDistributionV2,
     FocusHeatmapV2,
+    HabitCheckinCreateV2,
     HabitCreateV2,
     HabitPreferencesV2,
     HabitSectionV2,
@@ -1420,6 +1422,74 @@ class TickTickV2Client(BaseTickTickClient):
         }
         response = await self._post_json("/habitCheckins/query", json_data=data)
         return response
+
+    async def batch_habit_checkins(
+        self,
+        add: list[HabitCheckinCreateV2] | None = None,
+        update: list[dict[str, Any]] | None = None,
+        delete: list[str] | None = None,
+    ) -> BatchResponseV2:
+        """
+        Batch create, update, and delete habit check-ins.
+
+        This endpoint allows creating check-in records for specific dates,
+        including past dates (backdating).
+
+        Args:
+            add: Check-in records to create
+            update: Check-in records to update
+            delete: Check-in IDs to delete
+
+        Returns:
+            Batch response with etags and errors
+        """
+        data: BatchHabitCheckinRequestV2 = {
+            "add": add or [],
+            "update": update or [],
+            "delete": delete or [],
+        }
+        response = await self._post_json("/habitCheckins/batch", json_data=data)
+        return response
+
+    async def create_habit_checkin(
+        self,
+        checkin_id: str,
+        habit_id: str,
+        checkin_stamp: int,
+        value: float = 1.0,
+        goal: float = 1.0,
+    ) -> BatchResponseV2:
+        """
+        Create a habit check-in for a specific date.
+
+        This is a convenience method for creating a single check-in record.
+        Useful for backdating habit completions.
+
+        Args:
+            checkin_id: Client-generated check-in ID (24-char hex)
+            habit_id: Habit ID
+            checkin_stamp: Date stamp (YYYYMMDD format, e.g., 20251218)
+            value: Check-in value (1.0 for boolean habits)
+            goal: Goal at time of check-in
+
+        Returns:
+            Batch response
+        """
+        now = datetime.now(timezone.utc)
+        timestamp = now.strftime("%Y-%m-%dT%H:%M:%S.000+0000")
+
+        checkin: HabitCheckinCreateV2 = {
+            "id": checkin_id,
+            "habitId": habit_id,
+            "checkinStamp": checkin_stamp,
+            "checkinTime": timestamp,
+            "opTime": timestamp,
+            "value": value,
+            "goal": goal,
+            "status": 2,  # completed
+        }
+
+        return await self.batch_habit_checkins(add=[checkin])
 
     # =========================================================================
     # Health Check

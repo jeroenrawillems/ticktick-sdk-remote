@@ -2241,35 +2241,57 @@ async def ticktick_delete_habit(params: HabitDeleteInput, ctx: Context) -> str:
 )
 async def ticktick_checkin_habit(params: HabitCheckinInput, ctx: Context) -> str:
     """
-    Check in a habit (complete for today).
+    Check in a habit for today or a past date.
 
-    Records a check-in for the habit, incrementing the total and streak.
+    Records a check-in for the habit. If no date is provided, checks in for today
+    and increments both total and streak. If a past date is provided (backdating),
+    only increments total (streak is not affected by past check-ins).
+
+    This is useful for migrating habit history from another app.
 
     Args:
         params: Check-in parameters:
             - habit_id (str): Habit ID (required)
             - value (float): Check-in value (default: 1.0)
+            - checkin_date (date): Date to check in for (optional, default: today)
 
     Returns:
         Updated habit with new totals.
     """
     try:
         client = get_client(ctx)
-        habit = await client.checkin_habit(params.habit_id, params.value)
+        habit = await client.checkin_habit(
+            params.habit_id,
+            params.value,
+            params.checkin_date,
+        )
 
         if params.response_format == ResponseFormat.MARKDOWN:
+            date_str = (
+                params.checkin_date.strftime("%Y-%m-%d")
+                if params.checkin_date
+                else "today"
+            )
             lines = [
                 f"# Habit Checked In!",
                 "",
-                f"**{habit.name}** completed!",
+                f"**{habit.name}** completed for {date_str}!",
                 f"- **Total Check-ins**: {habit.total_checkins}",
                 f"- **Current Streak**: {habit.current_streak}",
             ]
+            if params.checkin_date and params.checkin_date < date.today():
+                lines.append("")
+                lines.append("*Note: Backdated check-ins don't affect the current streak.*")
             return "\n".join(lines)
         else:
             return json.dumps({
                 "success": True,
                 "habit": format_habit_json(habit),
+                "checkin_date": (
+                    params.checkin_date.isoformat()
+                    if params.checkin_date
+                    else None
+                ),
             }, indent=2)
 
     except Exception as e:

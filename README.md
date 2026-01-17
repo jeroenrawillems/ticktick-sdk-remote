@@ -20,7 +20,7 @@ A comprehensive async Python SDK for [TickTick](https://ticktick.com) with [MCP]
   - [Step 3: Configure Your AI Assistant](#step-3-configure-your-ai-assistant)
   - [CLI Reference](#cli-reference)
   - [Example Conversations](#example-conversations)
-  - [Available MCP Tools](#available-mcp-tools-45-total)
+  - [Available MCP Tools](#available-mcp-tools-51-total)
 - [Python Library Setup & Usage](#python-library-setup--usage)
   - [Setup](#setup)
   - [Quick Start](#quick-start)
@@ -44,13 +44,14 @@ A comprehensive async Python SDK for [TickTick](https://ticktick.com) with [MCP]
 ## Features
 
 ### MCP Server
-- **45 Tools**: Comprehensive coverage of TickTick functionality
+- **51 Tools**: Comprehensive coverage of TickTick functionality
 - **AI-Ready**: Works with Claude, GPT, and other MCP-compatible assistants
 - **Dual Output**: Markdown for humans, JSON for machines
 
 ### Python Library
 - **Full Async Support**: Built on `httpx` for high-performance async operations
-- **Complete Task Management**: Create, read, update, delete, complete, move tasks
+- **Complete Task Management**: Create, read, update, delete, complete, move, pin tasks
+- **Kanban Boards**: Full column management (create, update, delete, move tasks between columns)
 - **Project Organization**: Projects, folders, kanban boards
 - **Tag System**: Hierarchical tags with colors
 - **Habit Tracking**: Full CRUD for habits with check-ins, streaks, and goals
@@ -241,7 +242,7 @@ Once configured, you can ask Claude things like:
 - "Check in my meditation habit for today"
 - "Create a new habit to drink 8 glasses of water daily"
 
-### Available MCP Tools (45 Total)
+### Available MCP Tools (51 Total)
 
 #### Task Tools
 | Tool | Description |
@@ -259,6 +260,7 @@ Once configured, you can ask Claude things like:
 | `ticktick_abandoned_tasks` | List abandoned ("won't do") tasks |
 | `ticktick_deleted_tasks` | List deleted tasks (in trash) |
 | `ticktick_search_tasks` | Search tasks by text |
+| `ticktick_pin_task` | Pin or unpin a task |
 
 #### Project Tools
 | Tool | Description |
@@ -276,6 +278,15 @@ Once configured, you can ask Claude things like:
 | `ticktick_create_folder` | Create a folder |
 | `ticktick_rename_folder` | Rename a folder |
 | `ticktick_delete_folder` | Delete a folder |
+
+#### Kanban Column Tools
+| Tool | Description |
+|------|-------------|
+| `ticktick_list_columns` | List columns for a kanban project |
+| `ticktick_create_column` | Create a kanban column |
+| `ticktick_update_column` | Update column name or order |
+| `ticktick_delete_column` | Delete a kanban column |
+| `ticktick_move_task_to_column` | Move task to a column |
 
 #### Tag Tools
 | Tool | Description |
@@ -796,6 +807,7 @@ async with TickTickClient.from_settings() as client:
 | `Project` | Project/list container for tasks |
 | `ProjectGroup` | Folder for organizing projects |
 | `ProjectData` | Project with its tasks (from get_project_tasks) |
+| `Column` | Kanban column for organizing tasks in boards |
 | `Tag` | Tag with name, label, color, and optional parent |
 | `Habit` | Recurring habit with type, goals, streaks, and check-ins |
 | `HabitSection` | Time-of-day grouping (morning/afternoon/night) |
@@ -938,6 +950,8 @@ pytest --cov=ticktick_sdk --cov-report=term-missing
 | `tags` | Tag-related tests |
 | `habits` | Habit-related tests |
 | `focus` | Focus/Pomodoro tests |
+| `pinning` | Task pinning tests |
+| `columns` | Kanban column tests |
 | `mock_only` | Tests that only work with mocks |
 | `live_only` | Tests that only run with `--live` |
 

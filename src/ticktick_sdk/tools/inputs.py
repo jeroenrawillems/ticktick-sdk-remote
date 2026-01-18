@@ -450,6 +450,15 @@ class TaskListInput(BaseMCPInput):
         description="Filter by project ID",
         pattern=r"^(inbox\d+|[a-f0-9]{24})$",
     )
+    column_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Filter by kanban column ID. "
+            "Use with project_id for best results. "
+            "Only applies to 'active' status."
+        ),
+        pattern=r"^[a-f0-9]{24}$",
+    )
     tag: Optional[str] = Field(
         default=None,
         description="Filter by tag name",

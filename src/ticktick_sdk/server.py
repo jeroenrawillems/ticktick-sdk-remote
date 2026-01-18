@@ -491,6 +491,8 @@ async def ticktick_create_tasks(params: CreateTasksInput, ctx: Context) -> str:
                 spec["recurrence"] = task_item.recurrence
             if task_item.parent_id:
                 spec["parent_id"] = task_item.parent_id
+            if task_item.kind:
+                spec["kind"] = task_item.kind
 
             task_specs.append(spec)
 
@@ -747,6 +749,8 @@ async def ticktick_update_tasks(params: UpdateTasksInput, ctx: Context) -> str:
                 spec["recurrence"] = task_item.recurrence
             if task_item.column_id is not None:
                 spec["column_id"] = task_item.column_id
+            if task_item.kind is not None:
+                spec["kind"] = task_item.kind
 
             update_specs.append(spec)
 

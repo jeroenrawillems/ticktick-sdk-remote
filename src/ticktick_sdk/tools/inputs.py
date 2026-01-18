@@ -112,6 +112,14 @@ class TaskCreateItem(BaseModel):
         description="Parent task ID to make this a subtask. The SDK handles parent assignment after creation.",
         pattern=r"^[a-f0-9]{24}$",
     )
+    kind: Optional[str] = Field(
+        default=None,
+        description=(
+            "Task type/kind: 'TEXT' (standard task, default), 'NOTE' (note), "
+            "'CHECKLIST' (checklist with items). Must be uppercase."
+        ),
+        pattern=r"^(TEXT|NOTE|CHECKLIST)$",
+    )
 
     @field_validator("priority")
     @classmethod
@@ -196,6 +204,14 @@ class TaskUpdateItem(BaseModel):
     column_id: Optional[str] = Field(
         default=None,
         description="Kanban column ID to assign task to. Use empty string '' to remove from column.",
+    )
+    kind: Optional[str] = Field(
+        default=None,
+        description=(
+            "Task type/kind: 'TEXT', 'NOTE', or 'CHECKLIST'. "
+            "Changing kind may affect task behavior."
+        ),
+        pattern=r"^(TEXT|NOTE|CHECKLIST)$",
     )
 
 

@@ -71,6 +71,10 @@ def format_task_markdown(task: Task) -> str:
     lines.append(f"- **Status**: {status_label(task.status)}")
     lines.append(f"- **Priority**: {priority_label(task.priority)}")
 
+    # Display task kind only if non-default (not TEXT)
+    if task.kind and task.kind != "TEXT":
+        lines.append(f"- **Type**: {task.kind}")
+
     if task.due_date:
         lines.append(f"- **Due**: {format_datetime(task.due_date)}")
     if task.start_date:
@@ -102,6 +106,7 @@ def format_task_json(task: Task) -> dict[str, Any]:
         "project_id": task.project_id,
         "title": task.title,
         "content": task.content,
+        "kind": task.kind,
         "status": task.status,
         "status_label": status_label(task.status),
         "priority": task.priority,

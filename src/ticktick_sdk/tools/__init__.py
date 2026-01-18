@@ -6,6 +6,7 @@ Tools are organized into logical groups:
     - Task tools (create, read, update, delete, complete, move, etc.)
     - Project tools (CRUD, get with data)
     - Tag tools (CRUD, rename, merge)
+    - Habit tools (CRUD, checkin, archive)
     - User tools (profile, status, statistics)
     - Focus tools (heatmap, distribution)
     - Sync tools (full state sync)
@@ -13,48 +14,106 @@ Tools are organized into logical groups:
 
 from ticktick_sdk.tools.inputs import (
     ResponseFormat,
-    TaskCreateInput,
+    # Task inputs - list-based for batch operations
+    TaskCreateItem,
+    CreateTasksInput,
     TaskGetInput,
-    TaskUpdateInput,
-    TaskCompleteInput,
-    TaskDeleteInput,
-    TaskMoveInput,
-    TaskParentInput,
+    TaskUpdateItem,
+    UpdateTasksInput,
+    TaskIdentifier,
+    CompleteTasksInput,
+    DeleteTasksInput,
+    TaskMoveItem,
+    MoveTasksInput,
+    TaskParentItem,
+    SetTaskParentsInput,
+    TaskUnparentItem,
+    UnparentTasksInput,
+    TaskPinItem,
+    PinTasksInput,
     TaskListInput,
-    CompletedTasksInput,
+    SearchInput,
+    # Project inputs
     ProjectCreateInput,
     ProjectGetInput,
     ProjectDeleteInput,
+    ProjectUpdateInput,
+    # Folder inputs
     FolderCreateInput,
     FolderDeleteInput,
+    FolderRenameInput,
+    # Column inputs
+    ColumnListInput,
+    ColumnCreateInput,
+    ColumnUpdateInput,
+    ColumnDeleteInput,
+    # Tag inputs
     TagCreateInput,
     TagDeleteInput,
-    TagRenameInput,
     TagMergeInput,
+    TagUpdateInput,
+    # Focus inputs
     FocusStatsInput,
-    SearchInput,
+    # Habit inputs
+    HabitListInput,
+    HabitGetInput,
+    HabitCreateInput,
+    HabitUpdateInput,
+    HabitDeleteInput,
+    HabitCheckinItem,
+    CheckinHabitsInput,
+    HabitCheckinsInput,
 )
 
 __all__ = [
     "ResponseFormat",
-    "TaskCreateInput",
+    # Task inputs
+    "TaskCreateItem",
+    "CreateTasksInput",
     "TaskGetInput",
-    "TaskUpdateInput",
-    "TaskCompleteInput",
-    "TaskDeleteInput",
-    "TaskMoveInput",
-    "TaskParentInput",
+    "TaskUpdateItem",
+    "UpdateTasksInput",
+    "TaskIdentifier",
+    "CompleteTasksInput",
+    "DeleteTasksInput",
+    "TaskMoveItem",
+    "MoveTasksInput",
+    "TaskParentItem",
+    "SetTaskParentsInput",
+    "TaskUnparentItem",
+    "UnparentTasksInput",
+    "TaskPinItem",
+    "PinTasksInput",
     "TaskListInput",
-    "CompletedTasksInput",
+    "SearchInput",
+    # Project inputs
     "ProjectCreateInput",
     "ProjectGetInput",
     "ProjectDeleteInput",
+    "ProjectUpdateInput",
+    # Folder inputs
     "FolderCreateInput",
     "FolderDeleteInput",
+    "FolderRenameInput",
+    # Column inputs
+    "ColumnListInput",
+    "ColumnCreateInput",
+    "ColumnUpdateInput",
+    "ColumnDeleteInput",
+    # Tag inputs
     "TagCreateInput",
     "TagDeleteInput",
-    "TagRenameInput",
     "TagMergeInput",
+    "TagUpdateInput",
+    # Focus inputs
     "FocusStatsInput",
-    "SearchInput",
+    # Habit inputs
+    "HabitListInput",
+    "HabitGetInput",
+    "HabitCreateInput",
+    "HabitUpdateInput",
+    "HabitDeleteInput",
+    "HabitCheckinItem",
+    "CheckinHabitsInput",
+    "HabitCheckinsInput",
 ]

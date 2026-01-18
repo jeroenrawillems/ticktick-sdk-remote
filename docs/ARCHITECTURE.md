@@ -1,6 +1,6 @@
 # TickTick SDK Architecture Documentation
 
-> **Version**: 0.2.1
+> **Version**: 0.3.0
 > **Last Updated**: January 2026
 > **Audience**: Developers, AI Agents, System Architects
 
@@ -73,7 +73,7 @@ The SDK implements a **three-layer architecture** that separates concerns and pr
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │   LAYER 1: TickTickClient                                                   │
-│   File: src/ticktick_sdk/client/client.py (1,070 lines)                     │
+│   File: src/ticktick_sdk/client/client.py (1,197 lines)                     │
 │                                                                             │
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
 │   │  • User-facing facade with friendly API                             │   │
@@ -87,7 +87,7 @@ The SDK implements a **three-layer architecture** that separates concerns and pr
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │   LAYER 2: UnifiedTickTickAPI                                               │
-│   File: src/ticktick_sdk/unified/api.py (1,968 lines)                       │
+│   File: src/ticktick_sdk/unified/api.py (2,222 lines)                       │
 │                                                                             │
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
 │   │  • Version-agnostic operation implementation                        │   │
@@ -102,7 +102,7 @@ The SDK implements a **three-layer architecture** that separates concerns and pr
 ├──────────────────────────────────────┬──────────────────────────────────────┤
 │                                      │                                      │
 │   LAYER 3a: TickTickV1Client         │   LAYER 3b: TickTickV2Client         │
-│   File: api/v1/client.py (531 lines) │   File: api/v2/client.py (1,521 lines)│
+│   File: api/v1/client.py (531 lines) │   File: api/v2/client.py (1,653 lines)│
 │                                      │                                      │
 │   ┌──────────────────────────────┐   │   ┌──────────────────────────────┐   │
 │   │  • OAuth2 Bearer token auth  │   │   │  • Session + cookie auth     │   │
@@ -124,10 +124,10 @@ The SDK implements a **three-layer architecture** that separates concerns and pr
 
 | Layer | Component | Primary Responsibility | Lines of Code |
 |-------|-----------|----------------------|---------------|
-| **1** | `TickTickClient` | User-friendly interface, convenience methods, lifecycle | 1,070 |
-| **2** | `UnifiedTickTickAPI` | API routing, model conversion, error handling | 1,968 |
+| **1** | `TickTickClient` | User-friendly interface, convenience methods, lifecycle | 1,197 |
+| **2** | `UnifiedTickTickAPI` | API routing, model conversion, error handling | 2,222 |
 | **3a** | `TickTickV1Client` | V1 OAuth2 HTTP operations | 531 |
-| **3b** | `TickTickV2Client` | V2 session HTTP operations | 1,521 |
+| **3b** | `TickTickV2Client` | V2 session HTTP operations | 1,653 |
 
 ### Data Flow Overview
 
@@ -238,6 +238,8 @@ class APIPreference(StrEnum):
 | `list_deleted_tasks` | V2_ONLY | V2-only feature (trash) |
 | `move_task` | V2_ONLY | V2-only feature |
 | `set_task_parent` | V2_ONLY | V2-only feature (subtasks) |
+| `pin_task` | V2_ONLY | V2-only feature (task pinning) |
+| `unpin_task` | V2_ONLY | V2-only feature (task pinning) |
 | **Projects** | | |
 | `create_project` | V2_PRIMARY | V2 supports more options |
 | `get_project` | V1_PRIMARY | V1 has dedicated endpoint |
@@ -257,6 +259,12 @@ class APIPreference(StrEnum):
 | `update_project_group` | V2_ONLY | Not available in V1 |
 | `delete_project_group` | V2_ONLY | Not available in V1 |
 | `list_project_groups` | V2_ONLY | Not available in V1 |
+| **Kanban Columns** | | |
+| `list_columns` | V2_ONLY | V2-only feature |
+| `create_column` | V2_ONLY | V2-only feature |
+| `update_column` | V2_ONLY | V2-only feature |
+| `delete_column` | V2_ONLY | V2-only feature |
+| `move_task_to_column` | V2_ONLY | V2-only feature |
 | **Habits** | | |
 | All habit operations | V2_ONLY | Not available in V1 |
 | **User** | | |
@@ -274,7 +282,7 @@ class APIPreference(StrEnum):
 ## Section 4: Layer 1 - TickTickClient (High-Level Facade)
 
 **File**: `src/ticktick_sdk/client/client.py`
-**Lines**: 1,070
+**Lines**: 1,197
 **Purpose**: Provide a user-friendly, well-documented API for application developers
 
 ### Class Overview
@@ -370,7 +378,7 @@ async with TickTickClient.from_settings() as client:
 
 ### Method Categories
 
-The `TickTickClient` provides **80+ methods** organized into these categories:
+The `TickTickClient` provides **90+ methods** organized into these categories:
 
 #### Lifecycle Methods (4)
 - `connect()` - Initialize and authenticate
@@ -381,7 +389,7 @@ The `TickTickClient` provides **80+ methods** organized into these categories:
 #### Sync (1)
 - `sync()` - Get complete account state
 
-#### Task Methods (16)
+#### Task Methods (18)
 | Method | Description | Delegates to |
 |--------|-------------|--------------|
 | `get_all_tasks()` | List all active tasks | `_api.list_all_tasks()` |
@@ -400,6 +408,8 @@ The `TickTickClient` provides **80+ methods** organized into these categories:
 | `get_today_tasks()` | Tasks due today | Filter `get_all_tasks()` |
 | `get_overdue_tasks()` | Overdue tasks | Filter `get_all_tasks()` |
 | `search_tasks(query)` | Title/content search | Filter `get_all_tasks()` |
+| `pin_task(task_id, project_id)` | Pin task to top | `_api.pin_task()` |
+| `unpin_task(task_id, project_id)` | Unpin task | `_api.unpin_task()` |
 
 #### Project Methods (6)
 | Method | Description |
@@ -418,6 +428,15 @@ The `TickTickClient` provides **80+ methods** organized into these categories:
 | `create_folder(name)` | Create folder |
 | `rename_folder(folder_id, name)` | Rename folder |
 | `delete_folder(folder_id)` | Delete folder |
+
+#### Kanban Column Methods (5)
+| Method | Description |
+|--------|-------------|
+| `get_columns(project_id)` | List kanban columns for project |
+| `create_column(project_id, name, sort_order?)` | Create kanban column |
+| `update_column(column_id, project_id, name?, sort_order?)` | Update column |
+| `delete_column(column_id, project_id)` | Delete column |
+| `move_task_to_column(task_id, project_id, column_id)` | Move task to column |
 
 #### Tag Methods (6)
 | Method | Description |
@@ -482,7 +501,7 @@ async def create_task(
 ## Section 5: Layer 2 - UnifiedTickTickAPI (Routing & Conversion)
 
 **File**: `src/ticktick_sdk/unified/api.py`
-**Lines**: 1,968
+**Lines**: 2,222
 **Purpose**: Route operations to appropriate API, convert between models, handle errors
 
 ### Class Overview
@@ -2304,7 +2323,7 @@ __all__ = [
 ## Document Information
 
 - **Author**: Technical Documentation System
-- **Based on Source Code Version**: 0.2.1
+- **Based on Source Code Version**: 0.3.0
 - **Total Source Lines Analyzed**: 7,566
 - **Documentation Lines**: 2,200+
 - **Last Generated**: January 2026

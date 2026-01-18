@@ -104,45 +104,46 @@ from ticktick_sdk.client import TickTickClient
 from ticktick_sdk.settings import get_settings
 from ticktick_sdk.tools.inputs import (
     ResponseFormat,
-    TaskCreateInput,
+    # Task inputs - list-based for batch operations
+    CreateTasksInput,
     TaskGetInput,
-    TaskUpdateInput,
-    TaskCompleteInput,
-    TaskDeleteInput,
-    TaskMoveInput,
-    TaskParentInput,
-    TaskUnparentInput,
+    UpdateTasksInput,
+    CompleteTasksInput,
+    DeleteTasksInput,
+    MoveTasksInput,
+    SetTaskParentsInput,
+    UnparentTasksInput,
     TaskListInput,
-    TaskPinInput,
-    CompletedTasksInput,
-    AbandonedTasksInput,
-    DeletedTasksInput,
+    PinTasksInput,
+    SearchInput,
+    # Project inputs
     ProjectCreateInput,
     ProjectGetInput,
     ProjectDeleteInput,
     ProjectUpdateInput,
+    # Folder inputs
     FolderCreateInput,
     FolderDeleteInput,
     FolderRenameInput,
+    # Column inputs
     ColumnListInput,
     ColumnCreateInput,
     ColumnUpdateInput,
     ColumnDeleteInput,
-    TaskMoveToColumnInput,
+    # Tag inputs
     TagCreateInput,
     TagDeleteInput,
-    TagRenameInput,
     TagMergeInput,
     TagUpdateInput,
+    # Focus inputs
     FocusStatsInput,
-    SearchInput,
+    # Habit inputs
     HabitListInput,
     HabitGetInput,
     HabitCreateInput,
     HabitUpdateInput,
     HabitDeleteInput,
-    HabitCheckinInput,
-    HabitArchiveInput,
+    CheckinHabitsInput,
     HabitCheckinsInput,
 )
 from ticktick_sdk.models import Habit, HabitSection
@@ -401,116 +402,114 @@ def handle_error(e: Exception, operation: str) -> str:
 
 
 @mcp.tool(
-    name="ticktick_create_task",
+    name="ticktick_create_tasks",
     annotations={
-        "title": "Create Task",
+        "title": "Create Tasks",
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": False,
         "openWorldHint": True,
     },
 )
-async def ticktick_create_task(params: TaskCreateInput, ctx: Context) -> str:
+async def ticktick_create_tasks(params: CreateTasksInput, ctx: Context) -> str:
     """
-    Create a new task in TickTick.
+    Create one or more tasks in TickTick.
 
-    Creates a task with the specified properties. Tasks can include titles,
-    due dates, priorities, tags, reminders, and recurrence rules.
+    Creates tasks with specified properties. Supports batch creation (1-50 tasks).
+    Each task can include title, due date, priority, tags, reminders, and recurrence.
 
-    IMPORTANT TICKTICK BEHAVIORS:
-    - If no project_id is specified, the task is created in the inbox
-    - RECURRENCE REQUIRES start_date: If you set a recurrence rule without
-      start_date, the recurrence will be silently ignored by TickTick
-    - To create a SUBTASK, use ticktick_make_subtask after creating the task.
-      Setting parent_id here does NOT work (TickTick API ignores it on creation)
+    IMPORTANT BEHAVIORS:
+    - If no project_id is specified, tasks are created in the inbox
+    - RECURRENCE REQUIRES start_date: Recurrence rules without start_date are ignored
+    - parent_id is supported - the SDK handles parent assignment after creation
     - Tags are created automatically if they don't exist
 
     Args:
         params: Task creation parameters:
-            - title (str, required): Task title
-            - project_id (str, optional): Project to create in (defaults to inbox).
-              Get inbox ID from ticktick_get_status or project IDs from ticktick_list_projects
-            - content (str, optional): Task notes/description
-            - priority (str, optional): 'none' (default), 'low', 'medium', 'high'
-            - start_date (str, optional): Start date in ISO format (REQUIRED for recurrence)
-            - due_date (str, optional): Due date in ISO format (e.g., "2025-01-20T17:00:00")
-            - tags (list[str], optional): Tag names to apply. Tags are case-insensitive
-            - reminders (list[str], optional): Reminder triggers in iCal format
-              (e.g., "TRIGGER:-PT30M" for 30 minutes before)
-            - recurrence (str, optional): RRULE format (e.g., "RRULE:FREQ=DAILY;INTERVAL=1")
+            - tasks (list, required): List of task specifications (1-50 tasks)
+              Each task must contain:
+                - title (str, required): Task title
+              Optional fields:
+                - project_id (str): Project ID (defaults to inbox)
+                - content (str): Task notes/description
+                - priority (str): 'none', 'low', 'medium', 'high'
+                - start_date (str): Start date in ISO format (REQUIRED for recurrence)
+                - due_date (str): Due date in ISO format
+                - tags (list[str]): Tag names to apply
+                - reminders (list[str]): Reminder triggers in iCal format
+                - recurrence (str): RRULE format
+                - parent_id (str): Parent task ID for subtasks
             - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
-        On success: Formatted task details showing all created properties
+        On success: Summary of created tasks with details
         On error: Error message with hints for resolution
 
-        JSON format returns:
-        {
-            "id": "task_id",
-            "title": "Task title",
-            "project_id": "project_id",
-            "status": 0,
-            "priority": 0,
-            "due_date": "2025-01-20T17:00:00Z",
-            "tags": ["tag1", "tag2"],
-            ...
-        }
-
     Examples:
-        Simple task:
-            title="Buy groceries"
+        Single task:
+            tasks=[{"title": "Buy groceries"}]
 
-        Task with due date:
-            title="Submit report", due_date="2025-01-20T17:00:00", priority="high"
+        Multiple tasks:
+            tasks=[
+                {"title": "Task 1", "priority": "high"},
+                {"title": "Task 2", "tags": ["work"]},
+                {"title": "Task 3", "due_date": "2026-01-20"}
+            ]
 
-        Recurring task (MUST include start_date):
-            title="Daily standup", start_date="2025-01-15T09:00:00",
-            recurrence="RRULE:FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR"
-
-        Task with tags and reminder:
-            title="Meeting", tags=["work", "important"],
-            reminders=["TRIGGER:-PT15M"]
-
-    When NOT to use:
-        - To create subtasks: Create task first, then use ticktick_make_subtask
-        - To update existing task: Use ticktick_update_task instead
+        Task with parent (subtask):
+            tasks=[{"title": "Subtask", "parent_id": "parent_task_id", "project_id": "proj_id"}]
     """
     try:
         client = get_client(ctx)
 
-        # Parse priority
-        priority = None
-        if params.priority:
-            priority_map = {"none": 0, "low": 1, "medium": 3, "high": 5, "0": 0, "1": 1, "3": 3, "5": 5}
-            priority = priority_map.get(params.priority, 0)
+        # Build task specifications
+        task_specs = []
+        for task_item in params.tasks:
+            spec: dict[str, Any] = {"title": task_item.title}
 
-        # Parse dates
-        start_date = datetime.fromisoformat(params.start_date) if params.start_date else None
-        due_date = datetime.fromisoformat(params.due_date) if params.due_date else None
+            if task_item.project_id:
+                spec["project_id"] = task_item.project_id
+            if task_item.content:
+                spec["content"] = task_item.content
+            if task_item.description:
+                spec["description"] = task_item.description
+            if task_item.priority:
+                spec["priority"] = task_item.priority
+            if task_item.start_date:
+                spec["start_date"] = task_item.start_date
+            if task_item.due_date:
+                spec["due_date"] = task_item.due_date
+            if task_item.time_zone:
+                spec["time_zone"] = task_item.time_zone
+            if task_item.all_day is not None:
+                spec["all_day"] = task_item.all_day
+            if task_item.tags:
+                spec["tags"] = task_item.tags
+            if task_item.reminders:
+                spec["reminders"] = task_item.reminders
+            if task_item.recurrence:
+                spec["recurrence"] = task_item.recurrence
+            if task_item.parent_id:
+                spec["parent_id"] = task_item.parent_id
 
-        task = await client.create_task(
-            title=params.title,
-            project_id=params.project_id,
-            content=params.content,
-            description=params.description,
-            priority=priority,
-            start_date=start_date,
-            due_date=due_date,
-            time_zone=params.time_zone,
-            all_day=params.all_day,
-            tags=params.tags,
-            reminders=params.reminders,
-            recurrence=params.recurrence,
-            parent_id=params.parent_id,
-        )
+            task_specs.append(spec)
+
+        created_tasks = await client.create_tasks(task_specs)
 
         if params.response_format == ResponseFormat.MARKDOWN:
-            return f"# Task Created\n\n{format_task_markdown(task)}"
+            if len(created_tasks) == 1:
+                return f"# Task Created\n\n{format_task_markdown(created_tasks[0])}"
+            else:
+                return f"# {len(created_tasks)} Tasks Created\n\n{format_tasks_markdown(created_tasks, 'Created Tasks')}"
         else:
-            return json.dumps({"success": True, "task": format_task_json(task)}, indent=2)
+            return json.dumps({
+                "success": True,
+                "count": len(created_tasks),
+                "tasks": [format_task_json(t) for t in created_tasks]
+            }, indent=2)
 
     except Exception as e:
-        return handle_error(e, "create_task")
+        return handle_error(e, "create_tasks")
 
 
 @mcp.tool(
@@ -563,60 +562,94 @@ async def ticktick_get_task(params: TaskGetInput, ctx: Context) -> str:
 )
 async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
     """
-    List tasks with optional filters.
+    List tasks with flexible filtering.
 
-    Retrieves active tasks, optionally filtered by project, tag, priority,
-    or due date. Returns tasks sorted by due date and priority.
+    This unified tool handles all task listing scenarios:
+    - Active tasks (default)
+    - Completed tasks (with date range)
+    - Abandoned tasks (with date range)
+    - Deleted/trashed tasks
 
     Args:
-        params: Filter parameters including:
+        params: Filter parameters:
+            - status (str): 'active' (default), 'completed', 'abandoned', 'deleted'
             - project_id (str): Filter by project
             - tag (str): Filter by tag name
             - priority (str): Filter by priority level
-            - due_today (bool): Only tasks due today
-            - overdue (bool): Only overdue tasks
+            - due_today (bool): Only tasks due today (active only)
+            - overdue (bool): Only overdue tasks (active only)
+            - from_date (str): Start date for completed/abandoned (YYYY-MM-DD)
+            - to_date (str): End date for completed/abandoned (YYYY-MM-DD)
+            - days (int): Days to look back for completed/abandoned (default 7)
             - limit (int): Maximum results (default 50)
 
     Returns:
         Formatted list of tasks or error message.
 
     Examples:
-        - List all tasks: (no filters)
-        - List by project: project_id="60caa20d..."
-        - List urgent: priority="high"
-        - List overdue: overdue=True
+        - Active tasks: status="active" (or just omit status)
+        - Completed last 7 days: status="completed"
+        - Completed in range: status="completed", from_date="2026-01-01", to_date="2026-01-15"
+        - Abandoned tasks: status="abandoned", days=30
+        - Deleted tasks: status="deleted"
+        - Active + project: status="active", project_id="..."
     """
     try:
         client = get_client(ctx)
-        tasks = await client.get_all_tasks()
 
-        # Apply filters
-        if params.project_id:
-            tasks = [t for t in tasks if t.project_id == params.project_id]
+        # Handle different status types
+        if params.status == "active":
+            tasks = await client.get_all_tasks()
 
-        if params.tag:
-            tag_lower = params.tag.lower()
-            tasks = [t for t in tasks if any(tag.lower() == tag_lower for tag in t.tags)]
+            # Apply active-only filters
+            if params.project_id:
+                tasks = [t for t in tasks if t.project_id == params.project_id]
 
-        if params.priority:
-            priority_map = {"none": 0, "low": 1, "medium": 3, "high": 5}
-            target_priority = priority_map.get(params.priority, 0)
-            tasks = [t for t in tasks if t.priority == target_priority]
+            if params.tag:
+                tag_lower = params.tag.lower()
+                tasks = [t for t in tasks if any(tag.lower() == tag_lower for tag in t.tags)]
 
-        if params.due_today:
-            today = date.today()
-            tasks = [t for t in tasks if t.due_date and t.due_date.date() == today]
+            if params.priority:
+                priority_map = {"none": 0, "low": 1, "medium": 3, "high": 5}
+                target_priority = priority_map.get(params.priority, 0)
+                tasks = [t for t in tasks if t.priority == target_priority]
 
-        if params.overdue:
-            today = date.today()
-            tasks = [t for t in tasks if t.due_date and t.due_date.date() < today and not t.is_completed]
+            if params.due_today:
+                today = date.today()
+                tasks = [t for t in tasks if t.due_date and t.due_date.date() == today]
+
+            if params.overdue:
+                today = date.today()
+                tasks = [t for t in tasks if t.due_date and t.due_date.date() < today and not t.is_completed]
+
+        elif params.status == "completed":
+            # Completed tasks require date range
+            if params.from_date and params.to_date:
+                from_dt = datetime.fromisoformat(params.from_date)
+                to_dt = datetime.fromisoformat(params.to_date)
+            else:
+                to_dt = datetime.now()
+                from_dt = to_dt - timedelta(days=params.days)
+
+            tasks = await client.get_completed_tasks(days=params.days, limit=params.limit)
+
+        elif params.status == "abandoned":
+            # Abandoned tasks require date range
+            tasks = await client.get_abandoned_tasks(days=params.days, limit=params.limit)
+
+        elif params.status == "deleted":
+            tasks = await client.get_deleted_tasks(limit=params.limit)
+
+        else:
+            tasks = await client.get_all_tasks()
 
         # Apply limit
         total_count = len(tasks)
         tasks = tasks[: params.limit]
 
         if params.response_format == ResponseFormat.MARKDOWN:
-            result = format_tasks_markdown(tasks)
+            title = f"{params.status.capitalize()} Tasks" if params.status else "Tasks"
+            result = format_tasks_markdown(tasks, title)
         else:
             result = json.dumps(format_tasks_json(tasks), indent=2)
 
@@ -628,364 +661,368 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
 
 
 @mcp.tool(
-    name="ticktick_update_task",
+    name="ticktick_update_tasks",
     annotations={
-        "title": "Update Task",
+        "title": "Update Tasks",
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": True,
     },
 )
-async def ticktick_update_task(params: TaskUpdateInput, ctx: Context) -> str:
+async def ticktick_update_tasks(params: UpdateTasksInput, ctx: Context) -> str:
     """
-    Update an existing task.
+    Update one or more tasks.
 
-    Updates specified fields of a task while preserving others.
+    Updates specified fields of tasks. Supports batch updates (1-100 tasks).
+    Each update preserves unspecified fields.
+
+    Also supports column assignment for kanban boards via column_id field.
 
     Args:
-        params: Update parameters including:
-            - task_id (str): Task to update (required)
-            - project_id (str): Project containing the task (required)
-            - title (str): New title
-            - content (str): New content/notes
-            - priority (str): New priority
-            - due_date (str): New due date
-            - tags (list): New tags (replaces existing)
+        params: Update parameters:
+            - tasks (list, required): List of update specifications (1-100 tasks)
+              Each update must contain:
+                - task_id (str, required): Task to update
+                - project_id (str, required): Project containing the task
+              Optional update fields:
+                - title (str): New title
+                - content (str): New content/notes
+                - priority (str): New priority ('none', 'low', 'medium', 'high')
+                - start_date (str): New start date
+                - due_date (str): New due date
+                - tags (list): New tags (replaces existing)
+                - column_id (str): Kanban column ID (empty string to remove from column)
+            - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
-        Updated task details or error message.
+        Summary of updated tasks or error message.
 
     Examples:
-        - Update title: task_id="...", project_id="...", title="New Title"
-        - Update priority: task_id="...", project_id="...", priority="high"
+        Single task update:
+            tasks=[{"task_id": "abc123", "project_id": "proj1", "priority": "high"}]
+
+        Multiple tasks:
+            tasks=[
+                {"task_id": "abc1", "project_id": "proj1", "title": "Updated 1"},
+                {"task_id": "abc2", "project_id": "proj1", "priority": "low"}
+            ]
+
+        Move to kanban column:
+            tasks=[{"task_id": "abc1", "project_id": "proj1", "column_id": "col123"}]
     """
     try:
         client = get_client(ctx)
 
-        # Get existing task
-        task = await client.get_task(params.task_id, params.project_id)
+        # Build update specifications
+        update_specs = []
+        for task_item in params.tasks:
+            spec: dict[str, Any] = {
+                "task_id": task_item.task_id,
+                "project_id": task_item.project_id,
+            }
 
-        # Update fields if provided
-        if params.title is not None:
-            task.title = params.title
-        if params.content is not None:
-            task.content = params.content
-        if params.priority is not None:
-            priority_map = {"none": 0, "low": 1, "medium": 3, "high": 5, "0": 0, "1": 1, "3": 3, "5": 5}
-            task.priority = priority_map.get(params.priority, task.priority)
-        if params.start_date is not None:
-            task.start_date = datetime.fromisoformat(params.start_date)
-        if params.due_date is not None:
-            task.due_date = datetime.fromisoformat(params.due_date)
-        if params.tags is not None:
-            task.tags = params.tags
+            if task_item.title is not None:
+                spec["title"] = task_item.title
+            if task_item.content is not None:
+                spec["content"] = task_item.content
+            if task_item.priority is not None:
+                spec["priority"] = task_item.priority
+            if task_item.start_date is not None:
+                spec["start_date"] = task_item.start_date
+            if task_item.due_date is not None:
+                spec["due_date"] = task_item.due_date
+            if task_item.all_day is not None:
+                spec["all_day"] = task_item.all_day
+            if task_item.time_zone is not None:
+                spec["time_zone"] = task_item.time_zone
+            if task_item.tags is not None:
+                spec["tags"] = task_item.tags
+            if task_item.recurrence is not None:
+                spec["recurrence"] = task_item.recurrence
+            if task_item.column_id is not None:
+                spec["column_id"] = task_item.column_id
 
-        # Save updates
-        updated_task = await client.update_task(task)
+            update_specs.append(spec)
+
+        response = await client.update_tasks(update_specs)
 
         if params.response_format == ResponseFormat.MARKDOWN:
-            return f"# Task Updated\n\n{format_task_markdown(updated_task)}"
+            count = len(update_specs)
+            if count == 1:
+                return f"# Task Updated\n\nSuccessfully updated task `{update_specs[0]['task_id']}`"
+            else:
+                return f"# {count} Tasks Updated\n\nSuccessfully updated {count} tasks."
         else:
-            return json.dumps({"success": True, "task": format_task_json(updated_task)}, indent=2)
+            return json.dumps({
+                "success": True,
+                "count": len(update_specs),
+                "response": response
+            }, indent=2)
 
     except Exception as e:
-        return handle_error(e, "update_task")
+        return handle_error(e, "update_tasks")
 
 
 @mcp.tool(
-    name="ticktick_complete_task",
+    name="ticktick_complete_tasks",
     annotations={
-        "title": "Complete Task",
+        "title": "Complete Tasks",
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": True,
     },
 )
-async def ticktick_complete_task(params: TaskCompleteInput, ctx: Context) -> str:
+async def ticktick_complete_tasks(params: CompleteTasksInput, ctx: Context) -> str:
     """
-    Mark a task as complete.
+    Complete one or more tasks.
 
-    Changes the task status to completed and records the completion time.
-    This operation is idempotent - completing an already-completed task
-    has no additional effect.
+    Changes task status to completed and records completion time.
+    Supports batch completion (1-100 tasks).
 
     Args:
         params: Completion parameters:
-            - task_id (str): Task to complete (required)
-            - project_id (str): Project containing the task (required)
+            - tasks (list, required): List of task identifiers (1-100 tasks)
+              Each task must contain:
+                - task_id (str): Task to complete
+                - project_id (str): Project containing the task
+            - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
         Success confirmation or error message.
+
+    Examples:
+        Single task:
+            tasks=[{"task_id": "abc123", "project_id": "proj1"}]
+
+        Multiple tasks:
+            tasks=[
+                {"task_id": "abc1", "project_id": "proj1"},
+                {"task_id": "abc2", "project_id": "proj1"}
+            ]
     """
     try:
         client = get_client(ctx)
-        await client.complete_task(params.task_id, params.project_id)
-        return success_message(f"Task `{params.task_id}` marked as complete.")
+        task_ids = [(t.task_id, t.project_id) for t in params.tasks]
+        await client.complete_tasks(task_ids)
+
+        count = len(task_ids)
+        if count == 1:
+            return success_message(f"Task `{task_ids[0][0]}` marked as complete.")
+        else:
+            return success_message(f"{count} tasks marked as complete.")
 
     except Exception as e:
-        return handle_error(e, "complete_task")
+        return handle_error(e, "complete_tasks")
 
 
 @mcp.tool(
-    name="ticktick_delete_task",
+    name="ticktick_delete_tasks",
     annotations={
-        "title": "Delete Task",
+        "title": "Delete Tasks",
         "readOnlyHint": False,
         "destructiveHint": True,
         "idempotentHint": True,
         "openWorldHint": True,
     },
 )
-async def ticktick_delete_task(params: TaskDeleteInput, ctx: Context) -> str:
+async def ticktick_delete_tasks(params: DeleteTasksInput, ctx: Context) -> str:
     """
-    Delete a task.
+    Delete one or more tasks.
 
-    Moves the task to trash. This is a destructive operation but can be
-    undone from the TickTick trash.
+    Moves tasks to trash. Supports batch deletion (1-100 tasks).
+    Can be undone from the TickTick trash.
 
     Args:
         params: Deletion parameters:
-            - task_id (str): Task to delete (required)
-            - project_id (str): Project containing the task (required)
+            - tasks (list, required): List of task identifiers (1-100 tasks)
+              Each task must contain:
+                - task_id (str): Task to delete
+                - project_id (str): Project containing the task
+            - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
         Success confirmation or error message.
     """
     try:
         client = get_client(ctx)
-        await client.delete_task(params.task_id, params.project_id)
-        return success_message(f"Task `{params.task_id}` deleted.")
+        task_ids = [(t.task_id, t.project_id) for t in params.tasks]
+        await client.delete_tasks(task_ids)
+
+        count = len(task_ids)
+        if count == 1:
+            return success_message(f"Task `{task_ids[0][0]}` deleted.")
+        else:
+            return success_message(f"{count} tasks deleted.")
 
     except Exception as e:
-        return handle_error(e, "delete_task")
+        return handle_error(e, "delete_tasks")
 
 
 @mcp.tool(
-    name="ticktick_move_task",
+    name="ticktick_move_tasks",
     annotations={
-        "title": "Move Task",
+        "title": "Move Tasks",
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": True,
     },
 )
-async def ticktick_move_task(params: TaskMoveInput, ctx: Context) -> str:
+async def ticktick_move_tasks(params: MoveTasksInput, ctx: Context) -> str:
     """
-    Move a task to a different project.
+    Move one or more tasks to different projects.
 
-    Transfers a task from one project to another while preserving
-    all task properties.
+    Transfers tasks between projects while preserving all properties.
+    Supports batch moves (1-100 tasks).
 
     Args:
         params: Move parameters:
-            - task_id (str): Task to move (required)
-            - from_project_id (str): Source project (required)
-            - to_project_id (str): Destination project (required)
+            - moves (list, required): List of move specifications (1-100)
+              Each move must contain:
+                - task_id (str): Task to move
+                - from_project_id (str): Source project
+                - to_project_id (str): Destination project
+            - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
         Success confirmation or error message.
+
+    Examples:
+        Single task:
+            moves=[{"task_id": "abc123", "from_project_id": "proj1", "to_project_id": "proj2"}]
+
+        Multiple tasks to same project:
+            moves=[
+                {"task_id": "abc1", "from_project_id": "proj1", "to_project_id": "proj2"},
+                {"task_id": "abc2", "from_project_id": "proj1", "to_project_id": "proj2"}
+            ]
     """
     try:
         client = get_client(ctx)
-        await client.move_task(params.task_id, params.from_project_id, params.to_project_id)
-        return success_message(f"Task `{params.task_id}` moved to project `{params.to_project_id}`.")
+        move_specs = [{
+            "task_id": m.task_id,
+            "from_project_id": m.from_project_id,
+            "to_project_id": m.to_project_id,
+        } for m in params.moves]
+        await client.move_tasks(move_specs)
+
+        count = len(move_specs)
+        if count == 1:
+            return success_message(f"Task `{move_specs[0]['task_id']}` moved to project `{move_specs[0]['to_project_id']}`.")
+        else:
+            return success_message(f"{count} tasks moved.")
 
     except Exception as e:
-        return handle_error(e, "move_task")
+        return handle_error(e, "move_tasks")
 
 
 @mcp.tool(
-    name="ticktick_make_subtask",
+    name="ticktick_set_task_parents",
     annotations={
-        "title": "Make Subtask",
+        "title": "Set Task Parents",
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": True,
     },
 )
-async def ticktick_make_subtask(params: TaskParentInput, ctx: Context) -> str:
+async def ticktick_set_task_parents(params: SetTaskParentsInput, ctx: Context) -> str:
     """
-    Make a task a subtask of another task.
+    Make one or more tasks into subtasks.
 
-    Creates a parent-child relationship between two tasks. The child task
-    will appear nested under the parent task.
+    Creates parent-child relationships between tasks. Child tasks will
+    appear nested under their parent. Supports batch operations (1-50 tasks).
 
     Args:
         params: Parent assignment parameters:
-            - task_id (str): Task to make a subtask (required)
-            - parent_id (str): Parent task ID (required)
-            - project_id (str): Project containing both tasks (required)
+            - tasks (list, required): List of parent assignments (1-50)
+              Each assignment must contain:
+                - task_id (str): Task to make a subtask
+                - project_id (str): Project containing both tasks
+                - parent_id (str): Parent task ID
+            - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
         Success confirmation or error message.
+
+    Examples:
+        Single subtask:
+            tasks=[{"task_id": "child1", "project_id": "proj1", "parent_id": "parent1"}]
+
+        Multiple subtasks under same parent:
+            tasks=[
+                {"task_id": "child1", "project_id": "proj1", "parent_id": "parent1"},
+                {"task_id": "child2", "project_id": "proj1", "parent_id": "parent1"}
+            ]
     """
     try:
         client = get_client(ctx)
-        await client.make_subtask(params.task_id, params.parent_id, params.project_id)
-        return success_message(f"Task `{params.task_id}` is now a subtask of `{params.parent_id}`.")
+        assignments = [{
+            "task_id": t.task_id,
+            "project_id": t.project_id,
+            "parent_id": t.parent_id,
+        } for t in params.tasks]
+        await client.set_task_parents(assignments)
+
+        count = len(assignments)
+        if count == 1:
+            return success_message(f"Task `{assignments[0]['task_id']}` is now a subtask of `{assignments[0]['parent_id']}`.")
+        else:
+            return success_message(f"{count} tasks assigned as subtasks.")
 
     except Exception as e:
-        return handle_error(e, "make_subtask")
+        return handle_error(e, "set_task_parents")
 
 
 @mcp.tool(
-    name="ticktick_unparent_subtask",
+    name="ticktick_unparent_tasks",
     annotations={
-        "title": "Unparent Subtask",
+        "title": "Unparent Tasks",
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": True,
     },
 )
-async def ticktick_unparent_subtask(params: TaskUnparentInput, ctx: Context) -> str:
+async def ticktick_unparent_tasks(params: UnparentTasksInput, ctx: Context) -> str:
     """
-    Remove a task from its parent (make it a top-level task).
+    Remove one or more tasks from their parents.
 
-    Removes the parent-child relationship, turning the subtask back into
-    a regular top-level task.
+    Converts subtasks back into top-level tasks. Supports batch
+    operations (1-50 tasks).
 
     Args:
         params: Unparent parameters:
-            - task_id (str): Subtask to unparent (required)
-            - project_id (str): Project containing the task (required)
+            - tasks (list, required): List of tasks to unparent (1-50)
+              Each task must contain:
+                - task_id (str): Subtask to unparent
+                - project_id (str): Project containing the task
+            - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
         Success confirmation or error message.
 
     Raises:
-        Error if the task is not a subtask (has no parent).
+        Error if a task is not a subtask (has no parent).
     """
     try:
         client = get_client(ctx)
-        await client.unparent_subtask(params.task_id, params.project_id)
-        return success_message(f"Task `{params.task_id}` is now a top-level task.")
+        unparent_specs = [{
+            "task_id": t.task_id,
+            "project_id": t.project_id,
+        } for t in params.tasks]
+        await client.unparent_tasks(unparent_specs)
 
-    except Exception as e:
-        return handle_error(e, "unparent_subtask")
-
-
-@mcp.tool(
-    name="ticktick_completed_tasks",
-    annotations={
-        "title": "Get Completed Tasks",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
-)
-async def ticktick_completed_tasks(params: CompletedTasksInput, ctx: Context) -> str:
-    """
-    Get recently completed tasks.
-
-    Retrieves tasks that were completed within the specified time period.
-    Useful for reviewing productivity and completed work.
-
-    Args:
-        params: Query parameters:
-            - days (int): Number of days to look back (default 7)
-            - limit (int): Maximum results (default 50)
-
-    Returns:
-        Formatted list of completed tasks or error message.
-    """
-    try:
-        client = get_client(ctx)
-        tasks = await client.get_completed_tasks(days=params.days, limit=params.limit)
-
-        title = f"Completed Tasks (Last {params.days} Days)"
-
-        if params.response_format == ResponseFormat.MARKDOWN:
-            return format_tasks_markdown(tasks, title)
+        count = len(unparent_specs)
+        if count == 1:
+            return success_message(f"Task `{unparent_specs[0]['task_id']}` is now a top-level task.")
         else:
-            return json.dumps(format_tasks_json(tasks), indent=2)
+            return success_message(f"{count} tasks are now top-level tasks.")
 
     except Exception as e:
-        return handle_error(e, "completed_tasks")
-
-
-@mcp.tool(
-    name="ticktick_abandoned_tasks",
-    annotations={
-        "title": "Get Abandoned Tasks",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
-)
-async def ticktick_abandoned_tasks(params: AbandonedTasksInput, ctx: Context) -> str:
-    """
-    Get recently abandoned ("won't do") tasks.
-
-    Retrieves tasks that were marked as abandoned/won't do within the
-    specified time period. Useful for reviewing decisions and deprioritized work.
-
-    Args:
-        params: Query parameters:
-            - days (int): Number of days to look back (default 7)
-            - limit (int): Maximum results (default 50)
-
-    Returns:
-        Formatted list of abandoned tasks or error message.
-    """
-    try:
-        client = get_client(ctx)
-        tasks = await client.get_abandoned_tasks(days=params.days, limit=params.limit)
-
-        title = f"Abandoned Tasks (Last {params.days} Days)"
-
-        if params.response_format == ResponseFormat.MARKDOWN:
-            return format_tasks_markdown(tasks, title)
-        else:
-            return json.dumps(format_tasks_json(tasks), indent=2)
-
-    except Exception as e:
-        return handle_error(e, "abandoned_tasks")
-
-
-@mcp.tool(
-    name="ticktick_deleted_tasks",
-    annotations={
-        "title": "Get Deleted Tasks",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
-)
-async def ticktick_deleted_tasks(params: DeletedTasksInput, ctx: Context) -> str:
-    """
-    Get deleted tasks (in trash).
-
-    Retrieves tasks that have been deleted but are still in the trash.
-    Tasks in trash can potentially be restored.
-
-    Args:
-        params: Query parameters:
-            - limit (int): Maximum results (default 50)
-
-    Returns:
-        Formatted list of deleted tasks or error message.
-    """
-    try:
-        client = get_client(ctx)
-        tasks = await client.get_deleted_tasks(limit=params.limit)
-
-        title = "Deleted Tasks (Trash)"
-
-        if params.response_format == ResponseFormat.MARKDOWN:
-            return format_tasks_markdown(tasks, title)
-        else:
-            return json.dumps(format_tasks_json(tasks), indent=2)
-
-    except Exception as e:
-        return handle_error(e, "deleted_tasks")
+        return handle_error(e, "unparent_tasks")
 
 
 @mcp.tool(
@@ -1039,48 +1076,79 @@ async def ticktick_search_tasks(params: SearchInput, ctx: Context) -> str:
 
 
 @mcp.tool(
-    name="ticktick_pin_task",
+    name="ticktick_pin_tasks",
     annotations={
-        "title": "Pin/Unpin Task",
+        "title": "Pin/Unpin Tasks",
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": False,
     },
 )
-async def ticktick_pin_task(params: TaskPinInput, ctx: Context) -> str:
+async def ticktick_pin_tasks(params: PinTasksInput, ctx: Context) -> str:
     """
-    Pin or unpin a task.
+    Pin or unpin one or more tasks.
 
     Pinned tasks appear at the top of task lists in TickTick.
-    Pinning sets the pinnedTime to the current timestamp.
-    Unpinning clears the pinnedTime field.
+    Supports batch operations (1-50 tasks).
 
     Args:
-        params: Task pin input with task_id, project_id, and pin boolean
+        params: Pin operation parameters:
+            - tasks (list, required): List of pin operations (1-50 tasks)
+              Each operation must contain:
+                - task_id (str): Task to pin/unpin
+                - project_id (str): Project containing the task
+                - pin (bool): True to pin, False to unpin (default True)
+            - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
-        Updated task details
+        Success confirmation with updated task details.
+
+    Examples:
+        Pin single task:
+            tasks=[{"task_id": "abc123", "project_id": "proj1", "pin": true}]
+
+        Unpin task:
+            tasks=[{"task_id": "abc123", "project_id": "proj1", "pin": false}]
+
+        Pin multiple:
+            tasks=[
+                {"task_id": "abc1", "project_id": "proj1", "pin": true},
+                {"task_id": "abc2", "project_id": "proj1", "pin": true}
+            ]
     """
     try:
         client = get_client(ctx)
+        pin_specs = [{
+            "task_id": t.task_id,
+            "project_id": t.project_id,
+            "pin": t.pin,
+        } for t in params.tasks]
 
-        if params.pin:
-            task = await client.pin_task(params.task_id, params.project_id)
-            action = "pinned"
-        else:
-            task = await client.unpin_task(params.task_id, params.project_id)
-            action = "unpinned"
+        updated_tasks = await client.pin_tasks(pin_specs)
 
-        if params.response_format == ResponseFormat.MARKDOWN:
-            return f"**Success**: Task '{task.title}' has been {action}.\n\n" + format_task_markdown(task)
+        count = len(updated_tasks)
+        if count == 1:
+            task = updated_tasks[0]
+            action = "pinned" if params.tasks[0].pin else "unpinned"
+            if params.response_format == ResponseFormat.MARKDOWN:
+                return f"**Success**: Task '{task.title}' has been {action}.\n\n" + format_task_markdown(task)
+            else:
+                result = format_task_json(task)
+                result["action"] = action
+                return json.dumps(result, indent=2, default=str)
         else:
-            result = format_task_json(task)
-            result["action"] = action
-            return json.dumps(result, indent=2, default=str)
+            if params.response_format == ResponseFormat.MARKDOWN:
+                return f"**Success**: {count} tasks updated.\n\n{format_tasks_markdown(updated_tasks)}"
+            else:
+                return json.dumps({
+                    "success": True,
+                    "count": count,
+                    "tasks": [format_task_json(t) for t in updated_tasks]
+                }, indent=2, default=str)
 
     except Exception as e:
-        return handle_error(e, "pin_task")
+        return handle_error(e, "pin_tasks")
 
 
 # =============================================================================
@@ -1236,53 +1304,6 @@ async def ticktick_delete_column(params: ColumnDeleteInput, ctx: Context) -> str
 
     except Exception as e:
         return handle_error(e, "delete_column")
-
-
-@mcp.tool(
-    name="ticktick_move_task_to_column",
-    annotations={
-        "title": "Move Task to Kanban Column",
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    },
-)
-async def ticktick_move_task_to_column(params: TaskMoveToColumnInput, ctx: Context) -> str:
-    """
-    Move a task to a kanban column.
-
-    Use this to organize tasks within a kanban board. Set column_id to None
-    to remove a task from its current column.
-
-    Args:
-        params: Move input with task_id, project_id, and column_id
-
-    Returns:
-        Updated task details
-    """
-    try:
-        client = get_client(ctx)
-        task = await client.move_task_to_column(
-            task_id=params.task_id,
-            project_id=params.project_id,
-            column_id=params.column_id,
-        )
-
-        if params.column_id:
-            action = f"moved to column `{params.column_id}`"
-        else:
-            action = "removed from column"
-
-        if params.response_format == ResponseFormat.MARKDOWN:
-            return f"**Success**: Task '{task.title}' {action}\n\n" + format_task_markdown(task)
-        else:
-            result = format_task_json(task)
-            result["action"] = action
-            return json.dumps(result, indent=2, default=str)
-
-    except Exception as e:
-        return handle_error(e, "move_task_to_column")
 
 
 # =============================================================================
@@ -1734,26 +1755,54 @@ async def ticktick_update_tag(params: TagUpdateInput, ctx: Context) -> str:
     """
     Update a tag's properties.
 
-    Updates tag color or parent.
+    Updates tag color, parent, or label (rename). If label is provided,
+    the tag is renamed first, then other updates are applied.
 
     Args:
         params: Update parameters:
-            - name (str): Tag name to update (required)
+            - name (str): Current tag name to update (required)
             - color (str): New hex color code (e.g., '#F18181')
             - parent (str): New parent tag name (empty string to remove parent)
+            - label (str): New display name/label for the tag (rename)
 
     Returns:
         Formatted updated tag or error message.
+
+    Examples:
+        Change color:
+            name="work", color="#F18181"
+
+        Rename tag:
+            name="old-name", label="new-name"
+
+        Rename and change color:
+            name="old-name", label="new-name", color="#FF0000"
     """
     try:
         client = get_client(ctx)
+
+        # Handle rename if label is provided
+        if params.label:
+            await client.rename_tag(params.name, params.label)
+            # After rename, update the name we use for subsequent operations
+            tag_name = params.label
+        else:
+            tag_name = params.name
 
         # Handle empty string as None to remove parent
         parent = params.parent
         if parent == "":
             parent = None
 
-        tag = await client.update_tag(params.name, color=params.color, parent=parent)
+        # Apply other updates if any
+        if params.color or parent is not None:
+            tag = await client.update_tag(tag_name, color=params.color, parent=parent)
+        else:
+            # If only renamed, get the tag to return it
+            tags = await client.get_all_tags()
+            tag = next((t for t in tags if t.name.lower() == tag_name.lower()), None)
+            if not tag:
+                return success_message(f"Tag renamed to `{tag_name}`")
 
         if params.response_format == ResponseFormat.MARKDOWN:
             return f"# Tag Updated\n\n{format_tag_markdown(tag)}"
@@ -1794,39 +1843,6 @@ async def ticktick_delete_tag(params: TagDeleteInput, ctx: Context) -> str:
 
     except Exception as e:
         return handle_error(e, "delete_tag")
-
-
-@mcp.tool(
-    name="ticktick_rename_tag",
-    annotations={
-        "title": "Rename Tag",
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
-)
-async def ticktick_rename_tag(params: TagRenameInput, ctx: Context) -> str:
-    """
-    Rename a tag.
-
-    Changes the tag name while preserving all task associations.
-
-    Args:
-        params: Rename parameters:
-            - old_name (str): Current tag name (required)
-            - new_name (str): New tag name (required)
-
-    Returns:
-        Success confirmation or error message.
-    """
-    try:
-        client = get_client(ctx)
-        await client.rename_tag(params.old_name, params.new_name)
-        return success_message(f"Tag `{params.old_name}` renamed to `{params.new_name}`.")
-
-    except Exception as e:
-        return handle_error(e, "rename_tag")
 
 
 @mcp.tool(
@@ -2417,6 +2433,8 @@ async def ticktick_update_habit(params: HabitUpdateInput, ctx: Context) -> str:
     """
     Update a habit's properties.
 
+    Includes archive/unarchive functionality via the archived field.
+
     Args:
         params: Update parameters:
             - habit_id (str): Habit ID (required)
@@ -2430,12 +2448,43 @@ async def ticktick_update_habit(params: HabitUpdateInput, ctx: Context) -> str:
             - reminders (list[str]): New reminders
             - target_days (int): New target days
             - encouragement (str): New message
+            - archived (bool): Set true to archive, false to unarchive
 
     Returns:
         Updated habit details.
+
+    Examples:
+        Update name:
+            habit_id="abc123", name="New Habit Name"
+
+        Archive habit:
+            habit_id="abc123", archived=true
+
+        Unarchive habit:
+            habit_id="abc123", archived=false
     """
     try:
         client = get_client(ctx)
+
+        # Handle archive/unarchive via the archived field
+        if params.archived is not None:
+            if params.archived:
+                habit = await client.archive_habit(params.habit_id)
+                action = "archived"
+            else:
+                habit = await client.unarchive_habit(params.habit_id)
+                action = "unarchived"
+
+            # If only archiving/unarchiving (no other updates), return early
+            if not any([params.name, params.goal, params.step, params.unit, params.color,
+                       params.section_id, params.repeat_rule, params.reminders,
+                       params.target_days, params.encouragement]):
+                if params.response_format == ResponseFormat.MARKDOWN:
+                    return f"# Habit {action.capitalize()}\n\n**{habit.name}** has been {action}."
+                else:
+                    return json.dumps({"success": True, "action": action, "habit": format_habit_json(habit)}, indent=2)
+
+        # Apply other updates
         habit = await client.update_habit(
             habit_id=params.habit_id,
             name=params.name,
@@ -2492,144 +2541,96 @@ async def ticktick_delete_habit(params: HabitDeleteInput, ctx: Context) -> str:
 
 
 @mcp.tool(
-    name="ticktick_checkin_habit",
+    name="ticktick_checkin_habits",
     annotations={
-        "title": "Check In Habit",
+        "title": "Check In Habits",
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": False,
         "openWorldHint": True,
     },
 )
-async def ticktick_checkin_habit(params: HabitCheckinInput, ctx: Context) -> str:
+async def ticktick_checkin_habits(params: CheckinHabitsInput, ctx: Context) -> str:
     """
-    Check in a habit for today or a past date.
+    Check in one or more habits for today or past dates.
 
-    Records a check-in for the habit. If no date is provided, checks in for today
-    and increments both total and streak. If a past date is provided (backdating),
-    only increments total (streak is not affected by past check-ins).
+    Records check-ins for habits. For each check-in:
+    - If no date is provided, checks in for today (increments both total and streak)
+    - If a past date is provided (backdating), only increments total (streak unaffected)
 
-    This is useful for migrating habit history from another app.
+    This is useful for:
+    - Checking in multiple habits at once
+    - Migrating habit history from another app
+    - Backdating missed check-ins
 
     Args:
         params: Check-in parameters:
-            - habit_id (str): Habit ID (required)
-            - value (float): Check-in value (default: 1.0)
-            - checkin_date (date): Date to check in for (optional, default: today)
+            - checkins (list): List of check-ins, each containing:
+                - habit_id (str): Habit ID (required)
+                - value (float): Check-in value (default: 1.0)
+                - checkin_date (str): Date to check in for (YYYY-MM-DD, optional)
 
     Returns:
-        Updated habit with new totals.
+        Updated habits with new totals.
     """
     try:
         client = get_client(ctx)
-        habit = await client.checkin_habit(
-            params.habit_id,
-            params.value,
-            params.checkin_date,
-        )
+
+        # Build checkins list for batch operation
+        checkin_data = []
+        for checkin in params.checkins:
+            checkin_data.append({
+                "habit_id": checkin.habit_id,
+                "value": checkin.value,
+                "checkin_date": checkin.checkin_date,
+            })
+
+        # Call batch method
+        results = await client.checkin_habits(checkin_data)
 
         if params.response_format == ResponseFormat.MARKDOWN:
-            date_str = (
-                params.checkin_date.strftime("%Y-%m-%d")
-                if params.checkin_date
-                else "today"
-            )
-            lines = [
-                f"# Habit Checked In!",
-                "",
-                f"**{habit.name}** completed for {date_str}!",
-                f"- **Total Check-ins**: {habit.total_checkins}",
-                f"- **Current Streak**: {habit.current_streak}",
-            ]
-            if params.checkin_date and params.checkin_date < date.today():
+            lines = [f"# {len(results)} Habit Check-in(s) Recorded", ""]
+            today_str = date.today().isoformat()
+
+            for habit_id, habit in results.items():
+                # Find the corresponding checkin data
+                checkin_info = next(
+                    (c for c in params.checkins if c.habit_id == habit_id),
+                    None
+                )
+                date_str = (
+                    checkin_info.checkin_date
+                    if checkin_info and checkin_info.checkin_date
+                    else "today"
+                )
+
+                lines.append(f"## {habit.name}")
+                lines.append(f"- **Date**: {date_str}")
+                lines.append(f"- **Total Check-ins**: {habit.total_checkins}")
+                lines.append(f"- **Current Streak**: {habit.current_streak}")
                 lines.append("")
+
+            # Add backdating note if any past dates
+            has_backdated = any(
+                c.checkin_date and c.checkin_date < today_str
+                for c in params.checkins
+            )
+            if has_backdated:
                 lines.append("*Note: Backdated check-ins don't affect the current streak.*")
+
             return "\n".join(lines)
         else:
             return json.dumps({
                 "success": True,
-                "habit": format_habit_json(habit),
-                "checkin_date": (
-                    params.checkin_date.isoformat()
-                    if params.checkin_date
-                    else None
-                ),
+                "count": len(results),
+                "habits": {
+                    habit_id: format_habit_json(habit)
+                    for habit_id, habit in results.items()
+                },
             }, indent=2)
 
     except Exception as e:
-        return handle_error(e, "checkin_habit")
-
-
-@mcp.tool(
-    name="ticktick_archive_habit",
-    annotations={
-        "title": "Archive Habit",
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
-)
-async def ticktick_archive_habit(params: HabitArchiveInput, ctx: Context) -> str:
-    """
-    Archive a habit.
-
-    Archived habits are hidden but preserved. Use unarchive to restore.
-
-    Args:
-        params: Archive parameters:
-            - habit_id (str): Habit ID to archive (required)
-
-    Returns:
-        Updated habit.
-    """
-    try:
-        client = get_client(ctx)
-        habit = await client.archive_habit(params.habit_id)
-
-        if params.response_format == ResponseFormat.MARKDOWN:
-            return f"# Habit Archived\n\n**{habit.name}** has been archived."
-        else:
-            return json.dumps({"success": True, "habit": format_habit_json(habit)}, indent=2)
-
-    except Exception as e:
-        return handle_error(e, "archive_habit")
-
-
-@mcp.tool(
-    name="ticktick_unarchive_habit",
-    annotations={
-        "title": "Unarchive Habit",
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
-)
-async def ticktick_unarchive_habit(params: HabitArchiveInput, ctx: Context) -> str:
-    """
-    Unarchive a habit.
-
-    Restores an archived habit to active status.
-
-    Args:
-        params: Unarchive parameters:
-            - habit_id (str): Habit ID to unarchive (required)
-
-    Returns:
-        Updated habit.
-    """
-    try:
-        client = get_client(ctx)
-        habit = await client.unarchive_habit(params.habit_id)
-
-        if params.response_format == ResponseFormat.MARKDOWN:
-            return f"# Habit Unarchived\n\n**{habit.name}** has been restored."
-        else:
-            return json.dumps({"success": True, "habit": format_habit_json(habit)}, indent=2)
-
-    except Exception as e:
-        return handle_error(e, "unarchive_habit")
+        return handle_error(e, "checkin_habits")
 
 
 @mcp.tool(

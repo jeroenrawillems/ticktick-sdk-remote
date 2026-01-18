@@ -1,6 +1,6 @@
 # TickTick SDK - Data Models Documentation
 
-> **Version**: 0.2.1
+> **Version**: 0.3.0
 > **Last Updated**: January 2026
 > **Audience**: Developers, AI Agents, System Integrators
 
@@ -255,7 +255,7 @@ def from_v2(cls, data: dict[str, Any]) -> Self
 
 ## Section 3: Task Model
 
-**Source File**: `/src/ticktick_sdk/models/task.py` (339 lines)
+**Source File**: `/src/ticktick_sdk/models/task.py` (352 lines)
 
 The `Task` model is the most complex and important model in the SDK. It represents a task/todo item and combines fields from both V1 and V2 APIs.
 
@@ -310,6 +310,7 @@ class Task(TickTickModel):
 | `created_time` | `datetime \| None` | `None` | `createdTime` | When the task was created | Yes | Yes |
 | `modified_time` | `datetime \| None` | `None` | `modifiedTime` | When the task was last modified | Yes | Yes |
 | `completed_time` | `datetime \| None` | `None` | `completedTime` | When the task was completed | Yes | Yes |
+| `pinned_time` | `datetime \| None` | `None` | `pinnedTime` | When the task was pinned (null if not pinned) | No | Yes |
 | `time_zone` | `str \| None` | `None` | `timeZone` | IANA timezone name (e.g., "America/New_York") | Yes | Yes |
 | `is_all_day` | `bool \| None` | `None` | `isAllDay` | True if task has no specific time (date only) | Yes | Yes |
 | `is_floating` | `bool` | `False` | `isFloating` | True if task has no timezone (floating time) | No | Yes |
@@ -424,6 +425,7 @@ The `Task` class provides these read-only properties:
 | `is_subtask` | `bool` | True if parent_id is set |
 | `has_subtasks` | `bool` | True if child_ids is non-empty |
 | `priority_label` | `str` | Human-readable priority ("none", "low", "medium", "high") |
+| `is_pinned` | `bool` | True if pinned_time is set |
 
 ### Task Field Validators
 
@@ -433,7 +435,7 @@ The Task model includes these validators:
 ```python
 @field_validator(
     "start_date", "due_date", "created_time", "modified_time",
-    "completed_time", "remind_time", "repeat_first_date",
+    "completed_time", "pinned_time", "remind_time", "repeat_first_date",
     mode="before",
 )
 @classmethod
@@ -628,7 +630,7 @@ TRIGGER:-PT{duration}{unit}
 
 ## Section 4: Project Models
 
-**Source File**: `/src/ticktick_sdk/models/project.py` (273 lines)
+**Source File**: `/src/ticktick_sdk/models/project.py` (308 lines)
 
 ### Project Class
 
@@ -791,7 +793,7 @@ class ProjectGroup(TickTickModel):
 
 ### Column Class (Kanban)
 
-Represents a column in a Kanban board view.
+Represents a column in a Kanban board view. Columns organize tasks within kanban-view projects.
 
 ```python
 class Column(TickTickModel):
@@ -806,6 +808,38 @@ class Column(TickTickModel):
 | `project_id` | `str` | Required | `projectId` | Parent project ID | Yes | Yes |
 | `name` | `str` | Required | - | Column name | Yes | Yes |
 | `sort_order` | `int \| None` | `None` | `sortOrder` | Display position | Yes | Yes |
+| `created_time` | `datetime \| None` | `None` | `createdTime` | When column was created | No | Yes |
+| `modified_time` | `datetime \| None` | `None` | `modifiedTime` | When column was last modified | No | Yes |
+| `etag` | `str \| None` | `None` | - | Version tag for concurrency | No | Yes |
+
+#### Column Methods
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `from_v2` | `classmethod(data: dict) -> Column` | Create from V2 API response |
+| `to_v2_create_dict` | `() -> dict` | Convert to V2 API create format |
+| `to_v2_update_dict` | `() -> dict` | Convert to V2 API update format |
+
+#### Column Conversion Examples
+
+**`to_v2_create_dict()`**:
+```python
+{
+    "projectId": "project123",
+    "name": "In Progress",
+    "sortOrder": 1  # Optional
+}
+```
+
+**`to_v2_update_dict()`**:
+```python
+{
+    "id": "column456",
+    "projectId": "project123",
+    "name": "Done",       # Optional
+    "sortOrder": 2        # Optional
+}
+```
 
 ---
 
@@ -2109,6 +2143,6 @@ task = await client.create_task(
 
 - **Total Models Documented**: 14 unified models + 6 enums
 - **Source Files Referenced**: 10
-- **Generated For**: TickTick SDK v0.2.1
+- **Generated For**: TickTick SDK v0.3.0
 - **Pydantic Version**: v2.0+
 - **Python Version**: 3.11+

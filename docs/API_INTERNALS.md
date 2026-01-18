@@ -1,6 +1,6 @@
 # TickTick SDK - API Internals Documentation
 
-> **Version**: 0.2.1
+> **Version**: 0.3.0
 > **Last Updated**: January 2026
 > **Audience**: Developers, AI Agents, System Architects
 > **Companion Document**: See `ARCHITECTURE.md` for the overall system design
@@ -71,10 +71,10 @@ The unofficial V2 API provides full access to TickTick's features but requires r
 | `api/v1/client.py` | 532 | V1 API implementation |
 | `api/v1/auth.py` | 342 | OAuth2 authentication |
 | `api/v1/types.py` | 171 | V1 TypedDict definitions |
-| `api/v2/client.py` | 1521 | V2 API implementation |
+| `api/v2/client.py` | 1653 | V2 API implementation |
 | `api/v2/auth.py` | 367 | Session authentication |
 | `api/v2/types.py` | 799 | V2 TypedDict definitions |
-| `unified/api.py` | 1968 | Unified API layer |
+| `unified/api.py` | 2222 | Unified API layer |
 | `unified/router.py` | 322 | Routing logic |
 
 ---
@@ -747,7 +747,7 @@ Both are required for full functionality.
 
 ## Section 5: V2 API Client (TickTickV2Client)
 
-**File**: `/src/ticktick_sdk/api/v2/client.py` (1521 lines)
+**File**: `/src/ticktick_sdk/api/v2/client.py` (1653 lines)
 
 ### 5.1 Class Overview
 
@@ -989,13 +989,26 @@ async def create_task(self, title: str, project_id: str, **kwargs) -> BatchRespo
     task = {"title": title, "projectId": project_id, ...}
     return await self.batch_tasks(add=[task])
 
-async def update_task(self, task_id: str, project_id: str, **kwargs) -> BatchResponseV2:
+async def update_task(
+    self, task_id: str, project_id: str,
+    pinned_time: str | None = None,  # ISO string to pin, empty string to unpin
+    column_id: str | None = None,    # Kanban column ID
+    **kwargs
+) -> BatchResponseV2:
     task = {"id": task_id, "projectId": project_id, ...}
+    if pinned_time is not None:
+        task["pinnedTime"] = pinned_time if pinned_time else None
+    if column_id is not None:
+        task["columnId"] = column_id
     return await self.batch_tasks(update=[task])
 
 async def delete_task(self, project_id: str, task_id: str) -> BatchResponseV2:
     return await self.batch_tasks(delete=[{"projectId": project_id, "taskId": task_id}])
 ```
+
+**Task Pinning**: Set `pinnedTime` to an ISO timestamp string to pin a task. Set to empty string `""` to unpin.
+
+**Column Assignment**: Set `columnId` to move a task to a kanban column. Set to empty string `""` to remove from column.
 
 #### POST /batch/taskProject
 
@@ -1134,7 +1147,119 @@ async def batch_project_groups(
 }
 ```
 
-### 5.10 Tag Endpoints
+### 5.10 Kanban Column Endpoints
+
+#### GET /column/project/{projectId}
+
+Get all columns for a kanban-view project:
+
+```python
+async def get_columns(self, project_id: str) -> list[ColumnV2]:
+    endpoint = f"/column/project/{project_id}"
+    return await self._get_json(endpoint)
+```
+
+**Response:**
+
+```json
+[
+  {
+    "id": "col123abc456def789012345",
+    "projectId": "proj123abc456def789012",
+    "name": "To Do",
+    "sortOrder": 0,
+    "createdTime": "2026-01-15T10:00:00.000+0000",
+    "modifiedTime": "2026-01-15T10:00:00.000+0000",
+    "etag": "abc12345"
+  },
+  {
+    "id": "col456def789012345678901",
+    "projectId": "proj123abc456def789012",
+    "name": "In Progress",
+    "sortOrder": 1
+  }
+]
+```
+
+#### POST /column
+
+Batch create, update, or delete columns:
+
+```python
+async def batch_columns(
+    self,
+    add: list[ColumnCreateV2] | None = None,
+    update: list[ColumnUpdateV2] | None = None,
+    delete: list[ColumnDeleteV2] | None = None,
+) -> BatchResponseV2:
+    data = {"add": add or [], "update": update or [], "delete": delete or []}
+    return await self._post_json("/column", json_data=data)
+```
+
+**Create Request:**
+
+```json
+{
+  "add": [{
+    "projectId": "proj123abc456def789012",
+    "name": "Review",
+    "sortOrder": 2
+  }]
+}
+```
+
+**Update Request:**
+
+```json
+{
+  "update": [{
+    "id": "col123abc456def789012345",
+    "projectId": "proj123abc456def789012",
+    "name": "Done",
+    "sortOrder": 3
+  }]
+}
+```
+
+**Delete Request:**
+
+```json
+{
+  "delete": [{
+    "columnId": "col123abc456def789012345",
+    "projectId": "proj123abc456def789012"
+  }]
+}
+```
+
+**Convenience Methods:**
+
+```python
+async def create_column(
+    self, project_id: str, name: str, *, sort_order: int | None = None
+) -> BatchResponseV2:
+    column = {"projectId": project_id, "name": name}
+    if sort_order is not None:
+        column["sortOrder"] = sort_order
+    return await self.batch_columns(add=[column])
+
+async def update_column(
+    self, column_id: str, project_id: str, *,
+    name: str | None = None, sort_order: int | None = None
+) -> BatchResponseV2:
+    column = {"id": column_id, "projectId": project_id}
+    if name is not None:
+        column["name"] = name
+    if sort_order is not None:
+        column["sortOrder"] = sort_order
+    return await self.batch_columns(update=[column])
+
+async def delete_column(self, column_id: str, project_id: str) -> BatchResponseV2:
+    delete_item = {"columnId": column_id, "projectId": project_id}
+    return await self.batch_columns(delete=[delete_item])
+```
+
+### 5.12 Tag Endpoints
 
 #### POST /batch/tag
 
@@ -1187,7 +1312,7 @@ async def merge_tags(self, source_name: str, target_name: str) -> Any:
     return response.json() if response.content else None
 ```
 
-### 5.11 Focus/Pomodoro Endpoints
+### 5.13 Focus/Pomodoro Endpoints
 
 #### GET /pomodoros/statistics/heatmap/{from}/{to}
 
@@ -1224,7 +1349,7 @@ async def get_focus_by_tag(
 }
 ```
 
-### 5.12 Habit Endpoints
+### 5.14 Habit Endpoints
 
 #### GET /habits
 
@@ -1645,6 +1770,7 @@ class TaskV2(TypedDict):
     createdTime: NotRequired[str]
     modifiedTime: NotRequired[str]
     completedTime: NotRequired[str]
+    pinnedTime: NotRequired[str]  # Pinned timestamp (null if not pinned)
     timeZone: NotRequired[str]
     isAllDay: NotRequired[bool]
     repeatFlag: NotRequired[str]  # RRULE
@@ -1701,7 +1827,63 @@ class TaskMoveV2(TypedDict):
     taskId: str
 ```
 
-### 7.5 Sync State Type
+#### TaskUpdateV2 (Request)
+
+```python
+class TaskUpdateV2(TypedDict, total=False):
+    id: str                    # Required
+    projectId: str             # Required
+    title: str
+    content: str
+    priority: int
+    startDate: str
+    dueDate: str
+    items: list[ItemV2]        # Checklist items
+    sortOrder: int
+    completedTime: str
+    pinnedTime: str            # ISO string to pin, None to unpin
+    columnId: str              # Kanban column ID
+```
+
+### 7.5 Column Types (Kanban)
+
+```python
+class ColumnV2(TypedDict):
+    """V2 API kanban column response."""
+    id: str
+    projectId: str
+    name: str
+    sortOrder: NotRequired[int]
+    createdTime: NotRequired[str]
+    modifiedTime: NotRequired[str]
+    etag: NotRequired[str]
+
+class ColumnCreateV2(TypedDict, total=False):
+    """V2 API column creation request."""
+    projectId: str     # Required
+    name: str          # Required
+    sortOrder: int
+
+class ColumnUpdateV2(TypedDict, total=False):
+    """V2 API column update request."""
+    id: str            # Required
+    projectId: str     # Required
+    name: str
+    sortOrder: int
+
+class ColumnDeleteV2(TypedDict):
+    """V2 API column deletion request."""
+    columnId: str
+    projectId: str
+
+class BatchColumnRequestV2(TypedDict, total=False):
+    """V2 API batch column request."""
+    add: list[ColumnCreateV2]
+    update: list[ColumnUpdateV2]
+    delete: list[ColumnDeleteV2]
+```
+
+### 7.6 Sync State Type
 
 ```python
 class SyncStateV2(TypedDict):
@@ -1772,6 +1954,14 @@ OPERATION_ROUTING: dict[str, OperationConfig] = {
         APIPreference.V2_ONLY,
         "V2-only feature"
     ),
+    "pin_task": OperationConfig(
+        APIPreference.V2_ONLY,
+        "V2-only feature (task pinning)"
+    ),
+    "unpin_task": OperationConfig(
+        APIPreference.V2_ONLY,
+        "V2-only feature (task pinning)"
+    ),
     "list_deleted_tasks": OperationConfig(
         APIPreference.V2_ONLY,
         "V2-only feature (trash)"
@@ -1816,6 +2006,13 @@ OPERATION_ROUTING: dict[str, OperationConfig] = {
     "update_project_group": OperationConfig(APIPreference.V2_ONLY, "V2-only"),
     "delete_project_group": OperationConfig(APIPreference.V2_ONLY, "V2-only"),
     "list_project_groups": OperationConfig(APIPreference.V2_ONLY, "V2-only"),
+
+    # =========== COLUMNS (KANBAN) ===========
+    "list_columns": OperationConfig(APIPreference.V2_ONLY, "V2-only"),
+    "create_column": OperationConfig(APIPreference.V2_ONLY, "V2-only"),
+    "update_column": OperationConfig(APIPreference.V2_ONLY, "V2-only"),
+    "delete_column": OperationConfig(APIPreference.V2_ONLY, "V2-only"),
+    "move_task_to_column": OperationConfig(APIPreference.V2_ONLY, "V2-only"),
 
     # =========== TAGS ===========
     "create_tag": OperationConfig(APIPreference.V2_ONLY, "V2-only"),
@@ -1916,7 +2113,7 @@ def get_fallback_client(self, operation: str) -> tuple[str, object | None]:
 
 ## Section 9: Unified API Layer (UnifiedTickTickAPI)
 
-**File**: `/src/ticktick_sdk/unified/api.py` (1968 lines)
+**File**: `/src/ticktick_sdk/unified/api.py` (2222 lines)
 
 ### 9.1 Purpose
 
@@ -2843,5 +3040,5 @@ async with UnifiedTickTickAPI(
 
 ---
 
-*Document generated for TickTick SDK v0.2.1*
+*Document generated for TickTick SDK v0.3.0*
 *This is a comprehensive technical reference for the API layer internals.*

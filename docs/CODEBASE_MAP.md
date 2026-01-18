@@ -6,11 +6,11 @@
 
 ## Executive Summary
 
-This is a production-grade Python SDK for TickTick (3K+ downloads) that reverse-engineers both V1 (official OAuth2 API) and V2 (unofficial session API) to provide comprehensive task management capabilities. The codebase is 15,645 lines of Python across 32 source modules, with 13 test suites covering 400+ test cases.
+This is a production-grade Python SDK for TickTick (3K+ downloads) that reverse-engineers both V1 (official OAuth2 API) and V2 (unofficial session API) to provide comprehensive task management capabilities. The codebase is 17,000+ lines of Python across 32 source modules, with 13 test suites covering 400+ test cases.
 
 | Metric | Value |
 |--------|-------|
-| **Current Version** | 0.3.0 |
+| **Current Version** | 0.4.2 |
 | **License** | MIT |
 | **Python Support** | 3.11, 3.12, 3.13 |
 | **Key Dependencies** | httpx (async HTTP), pydantic v2 (validation), MCP v1.0+ (AI integration) |
@@ -34,12 +34,12 @@ ticktick-mcp/
 │   │   └── v2/                   # Unofficial session API
 │   │       ├── client.py         # TickTickV2Client (1653 lines)
 │   │       ├── auth.py           # SessionHandler & SessionToken
-│   │       └── types.py          # V2 request/response types (798 lines)
+│   │       └── types.py          # V2 request/response types (850 lines)
 │   ├── client/                    # High-level user-facing client
 │   │   ├── __init__.py
-│   │   └── client.py             # TickTickClient main class (1197 lines)
+│   │   └── client.py             # TickTickClient main class (1368 lines)
 │   ├── unified/                   # API routing & unification
-│   │   ├── api.py                # UnifiedTickTickAPI (2222 lines)
+│   │   ├── api.py                # UnifiedTickTickAPI (2797 lines)
 │   │   └── router.py             # APIRouter with operation routing table (321 lines)
 │   ├── models/                    # Unified Pydantic data models
 │   │   ├── base.py               # TickTickModel base class
@@ -49,15 +49,15 @@ ticktick-mcp/
 │   │   ├── tag.py                # Tag model
 │   │   ├── user.py               # User, UserStatus, UserStatistics
 │   │   └── __init__.py           # Models public API
-│   ├── server.py                  # MCP server with 50 tools (2707 lines)
-│   ├── cli.py                     # Command-line interface (261 lines)
+│   ├── server.py                  # MCP server with 43 tools (2752 lines)
+│   ├── cli.py                     # Command-line interface (454 lines)
 │   ├── auth_cli.py               # OAuth2 flow CLI (575 lines)
 │   ├── settings.py               # Configuration via environment (268 lines)
 │   ├── constants.py              # Enums, URLs, timeouts
 │   ├── exceptions.py             # Exception hierarchy (271 lines)
 │   └── tools/                     # MCP tool utilities
-│       ├── formatting.py         # Markdown/JSON formatters (477 lines)
-│       └── inputs.py             # MCP tool input models (1056 lines)
+│       ├── formatting.py         # Markdown/JSON formatters (709 lines)
+│       └── inputs.py             # MCP tool input models (1166 lines)
 ├── tests/                         # Test suite (13 test modules)
 │   ├── conftest.py               # Pytest fixtures & mock clients
 │   ├── test_client_tasks.py      # Task CRUD tests
@@ -542,7 +542,7 @@ Statistics:
 
 ## Part 6: Unified API Layer
 
-**Location:** `unified/api.py` (2222 lines)
+**Location:** `unified/api.py` (2797 lines)
 
 ### 6.1 UnifiedTickTickAPI Class
 
@@ -551,6 +551,7 @@ Purpose:
 - Routes calls to V1 or V2 based on APIRouter
 - Converts unified models ↔ API-specific formats
 - Manages both V1 and V2 client lifecycle
+- Provides batch operations for bulk task management
 
 Constructor Parameters:
 - `client_id: str`
@@ -564,13 +565,23 @@ Constructor Parameters:
 
 ### 6.2 Operation Categories
 
-**Tasks (17 methods):**
+**Tasks (Single Operations):**
 - `create_task()`, `get_task()`, `update_task()`, `delete_task()`
 - `complete_task()`, `list_all_tasks()`, `move_task()`
 - `set_task_parent()`, `unset_task_parent()` (subtasks)
 - `pin_task()`, `unpin_task()` (task pinning)
 - `list_completed_tasks()`, `list_deleted_tasks()`, `list_abandoned_tasks()`
 - Query helpers: `get_today_tasks()`, `search_tasks()`
+
+**Tasks (Batch Operations):**
+- `create_tasks()` - Create multiple tasks (1-50)
+- `update_tasks()` - Update multiple tasks (1-100)
+- `complete_tasks()` - Complete multiple tasks (1-100)
+- `delete_tasks()` - Delete multiple tasks (1-100)
+- `move_tasks()` - Move multiple tasks (1-50)
+- `set_task_parents()` - Set parents for multiple tasks (1-50)
+- `unset_task_parents()` - Remove parents from multiple tasks (1-50)
+- `pin_tasks()` / `unpin_tasks()` - Pin/unpin multiple tasks (1-100)
 
 **Projects (8 methods):**
 - `create_project()`, `get_project()`, `update_project()`, `delete_project()`
@@ -581,20 +592,17 @@ Constructor Parameters:
 - `create_project_group()`, `update_project_group()`, `delete_project_group()`
 - `list_project_groups()`
 
-**Kanban Columns (5 methods):**
+**Kanban Columns (4 methods):**
 - `list_columns()`, `create_column()`, `update_column()`, `delete_column()`
-- `move_task_to_column()`
 
-**Tags (7 methods):**
+**Tags (6 methods):**
 - `create_tag()`, `update_tag()`, `delete_tag()`
-- `rename_tag()`, `merge_tags()`
-- `list_tags()`
+- `merge_tags()`, `list_tags()`
 
-**Habits (11 methods):**
+**Habits (10 methods):**
 - `create_habit()`, `update_habit()`, `delete_habit()`
 - `list_habits()`, `get_habit()`
-- `checkin_habit()` (with backdating support)
-- `archive_habit()`, `unarchive_habit()`
+- `checkin_habit()`, `checkin_habits()` (batch, with backdating support)
 - `list_habit_sections()`, `get_habit_preferences()`
 - `get_habit_checkins()`
 
@@ -671,11 +679,11 @@ V1_PRIMARY = auto() # Try V1 first, fallback to V2
 
 ## Part 8: High-Level Client
 
-**Location:** `client/client.py` (1197 lines)
+**Location:** `client/client.py` (1368 lines)
 
 ### 8.1 TickTickClient Class
 
-Purpose: Friendly, documented user-facing API
+Purpose: Friendly, documented user-facing API with batch operation support
 
 Entry Points:
 ```python
@@ -694,7 +702,7 @@ async with TickTickClient(
     tasks = await client.get_all_tasks()
 ```
 
-### 8.2 Public API Methods (80+ total)
+### 8.2 Public API Methods (90+ total)
 
 **Lifecycle (4 methods):**
 - `connect()` - Authenticate both V1/V2
@@ -702,35 +710,43 @@ async with TickTickClient(
 - `is_connected` - Connection status property
 - `inbox_id` - Get inbox project ID
 
-**Tasks (16 methods):**
+**Tasks - Single Operations:**
 - `get_all_tasks()`, `get_task()`, `create_task()`, `update_task()`
 - `complete_task()`, `delete_task()`, `move_task()`
 - `make_subtask()`, `unparent_subtask()`
 - `get_completed_tasks()`, `get_abandoned_tasks()`, `get_deleted_tasks()`
 - `quick_add()`, `search_tasks()`
 - `get_today_tasks()`, `get_overdue_tasks()`, `get_tasks_by_tag()`, `get_tasks_by_priority()`
+- `pin_task()`, `unpin_task()`
 
-**Projects (8 methods):**
+**Tasks - Batch Operations:**
+- `create_tasks()` - Create multiple tasks (1-50)
+- `update_tasks()` - Update multiple tasks (1-100)
+- `complete_tasks()` - Complete multiple tasks (1-100)
+- `delete_tasks()` - Delete multiple tasks (1-100)
+- `move_tasks()` - Move multiple tasks (1-50)
+- `make_subtasks()` - Set parents for multiple tasks (1-50)
+- `unparent_subtasks()` - Remove parents from multiple tasks (1-50)
+- `pin_tasks()` / `unpin_tasks()` - Pin/unpin multiple tasks (1-100)
+
+**Projects (6 methods):**
 - `get_all_projects()`, `get_project()`, `get_project_tasks()`
 - `create_project()`, `update_project()`, `delete_project()`
 
 **Folders (4 methods):**
 - `get_all_folders()`, `create_folder()`, `rename_folder()`, `delete_folder()`
 
-**Task Pinning (2 methods):**
-- `pin_task()`, `unpin_task()`
+**Kanban Columns (4 methods):**
+- `get_columns()`, `create_column()`, `update_column()`, `delete_column()`
 
-**Kanban Columns (5 methods):**
-- `get_columns()`, `create_column()`, `update_column()`, `delete_column()`, `move_task_to_column()`
-
-**Tags (7 methods):**
+**Tags (5 methods):**
 - `get_all_tags()`, `create_tag()`, `update_tag()`, `delete_tag()`
-- `rename_tag()`, `merge_tags()`
+- `merge_tags()`
 
-**Habits (11 methods):**
+**Habits:**
 - `get_all_habits()`, `get_habit()`, `get_habit_sections()`, `get_habit_preferences()`
 - `create_habit()`, `update_habit()`, `delete_habit()`
-- `checkin_habit()`, `archive_habit()`, `unarchive_habit()`, `get_habit_checkins()`
+- `checkin_habit()`, `checkin_habits()` (batch), `get_habit_checkins()`
 
 **User & Analytics (4 methods):**
 - `get_profile()`, `get_status()`, `get_statistics()`, `get_preferences()`
@@ -779,42 +795,49 @@ TickTickError (base)
 
 ## Part 10: MCP Server
 
-**Location:** `server.py` (2445 lines)
+**Location:** `server.py` (2752 lines)
 
 ### 10.1 Overview
 
 - Framework: FastMCP (async MCP server framework)
 - Entry Point: `main()` function
-- Total Tools: 50
+- Total Tools: 43
+- Batch Operations: All mutation tools accept lists for bulk operations (1-100 items)
+- Tool Filtering: Supports `--enabledModules` and `--enabledTools` CLI flags
 
 ### 10.2 Tool Organization
 
 | Category | Count | Tools |
 |----------|-------|-------|
-| Task | 14 | create, get, list, update, complete, delete, move, make_subtask, unparent_subtask, completed, abandoned, deleted, search, pin |
-| Project | 6 | list, get, create, update, delete |
-| Folder | 4 | list, create, rename, delete |
-| Kanban Column | 5 | list, create, update, delete, move_task_to_column |
-| Tag | 7 | list, create, update, delete, rename, merge |
-| Habit | 10 | list, get, sections, create, update, delete, checkin, archive, unarchive, checkins |
-| User & Analytics | 6 | profile, status, statistics, preferences, focus_heatmap, focus_by_tag |
+| Task | 11 | create_tasks, get_task, list_tasks, update_tasks, complete_tasks, delete_tasks, move_tasks, set_task_parents, unparent_tasks, search_tasks, pin_tasks |
+| Project | 5 | list_projects, get_project, create_project, update_project, delete_project |
+| Folder | 4 | list_folders, create_folder, rename_folder, delete_folder |
+| Kanban Column | 4 | list_columns, create_column, update_column, delete_column |
+| Tag | 5 | list_tags, create_tag, update_tag, delete_tag, merge_tags |
+| Habit | 8 | habits, habit, habit_sections, create_habit, update_habit, delete_habit, checkin_habits, habit_checkins |
+| User & Analytics | 6 | get_profile, get_status, get_statistics, get_preferences, focus_heatmap, focus_by_tag |
+
+**Batch-Capable Tools**: Task creation (1-50), updates (1-100), completion (1-100), deletion (1-100), moving (1-50), parent setting (1-50), unparenting (1-50), pinning (1-100), habit check-ins (1-50).
 
 ### 10.3 Tool Input Models
 
-**Location:** `tools/inputs.py` (1056 lines)
+**Location:** `tools/inputs.py` (1166 lines)
 
 - `ResponseFormat` enum: MARKDOWN, JSON
 - Input dataclasses with Pydantic validation
+- Batch input types support lists of operations
 - Each tool has a corresponding input model
 
 ### 10.4 Tool Output Formatting
 
-**Location:** `tools/formatting.py` (477 lines)
+**Location:** `tools/formatting.py` (709 lines)
 
 | Format | Purpose | Character Limit |
 |--------|---------|-----------------|
 | Markdown | Human-readable (headers, lists, tables, emoji) | 25,000 chars |
 | JSON | Machine-readable (full model serialization) | None |
+
+Includes specialized formatters for batch operation results.
 
 ---
 
@@ -822,7 +845,7 @@ TickTickError (base)
 
 ### 11.1 Main CLI
 
-**Location:** `cli.py` (261 lines)
+**Location:** `cli.py` (454 lines)
 
 **Entry Point:** `ticktick-sdk` command
 
@@ -830,11 +853,32 @@ Commands:
 ```
 ticktick-sdk              # Default: run server
 ticktick-sdk server       # Explicit: run server
+ticktick-sdk server --host HOST           # Use specific API host
+ticktick-sdk server --enabledModules M    # Enable only specific tool modules
+ticktick-sdk server --enabledTools T      # Enable only specific tools
 ticktick-sdk auth         # OAuth2 flow (browser)
 ticktick-sdk auth --manual # OAuth2 flow (SSH-friendly)
 ticktick-sdk --version    # Show version
 ticktick-sdk --help       # Show help
 ```
+
+**Server Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--host HOST` | API host: `ticktick.com` (default) or `dida365.com` (Chinese) |
+| `--enabledModules MODULES` | Comma-separated list of tool modules to enable |
+| `--enabledTools TOOLS` | Comma-separated list of specific tools to enable |
+
+**Tool Modules** (for `--enabledModules`):
+- `tasks`: Task CRUD and management tools
+- `projects`: Project management tools
+- `folders`: Folder management tools
+- `columns`: Kanban column tools
+- `tags`: Tag management tools
+- `habits`: Habit tracking tools
+- `user`: User profile and preferences tools
+- `focus`: Focus/pomodoro analytics tools
 
 ### 11.2 Auth CLI
 
@@ -858,9 +902,27 @@ ticktick-sdk --help       # Show help
 
 ## Part 12: Constants
 
-**Location:** `constants.py`
+**Location:** `constants.py` (292 lines)
 
-### 12.1 API Configuration
+### 12.1 API Host Configuration
+
+The SDK supports multiple API hosts via the `TICKTICK_HOST` environment variable:
+
+| Host | Description |
+|------|-------------|
+| `ticktick.com` | International version (default) |
+| `dida365.com` | Chinese version (滴答清单) |
+
+**Dynamic URL Functions:**
+
+| Function | Description |
+|----------|-------------|
+| `get_api_host()` | Get configured host from `TICKTICK_HOST` env var |
+| `get_api_base_v1(host)` | Get V1 API base URL for host |
+| `get_api_base_v2(host)` | Get V2 API base URL for host |
+| `get_oauth_base(host)` | Get OAuth base URL for host |
+
+**Legacy Constants** (for reference, use dynamic functions instead):
 
 | Constant | Value |
 |----------|-------|
@@ -997,23 +1059,24 @@ The SDK handles these known API quirks:
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| server.py | 2,707 | MCP server with 50 tools |
-| unified/api.py | 2,222 | Core routing and unification |
+| unified/api.py | 2,797 | Core routing and unification with batch operations |
+| server.py | 2,752 | MCP server with 43 tools |
 | api/v2/client.py | 1,653 | V2 API client implementation |
-| client/client.py | 1,197 | High-level user API |
-| tools/inputs.py | 1,056 | MCP tool input models |
-| api/v2/types.py | 798 | V2 request/response types |
+| client/client.py | 1,368 | High-level user API with batch methods |
+| tools/inputs.py | 1,166 | MCP tool input models (batch-capable) |
+| api/v2/types.py | 850 | V2 request/response types |
+| tools/formatting.py | 709 | Response formatting (batch support) |
 | auth_cli.py | 575 | OAuth2 CLI flow |
 | api/v1/client.py | 531 | V1 API client |
 | api/base.py | 469 | Base HTTP client |
-| tools/formatting.py | 477 | Response formatting |
+| cli.py | 454 | Command-line interface with tool filtering |
 | models/task.py | 352 | Task model |
 | unified/router.py | 321 | Operation routing table |
-| models/habit.py | 285 | Habit models |
 | models/project.py | 308 | Project models |
+| constants.py | 292 | Enums, URLs, host configuration |
+| models/habit.py | 285 | Habit models |
 | exceptions.py | 271 | Exception hierarchy |
 | settings.py | 268 | Configuration management |
-| cli.py | 261 | Command-line interface |
 
 ---
 
@@ -1022,15 +1085,16 @@ The SDK handles these known API quirks:
 | Metric | Value |
 |--------|-------|
 | Total Python files | 32 source + 13 tests |
-| Total lines of code | 15,645 |
-| Largest file | server.py (2,707 lines) |
+| Total lines of code | 17,000+ |
+| Largest file | unified/api.py (2,797 lines) |
 | Number of models | 13 unified models |
 | Number of exceptions | 12 exception types |
-| Number of MCP tools | 50 tools |
+| Number of MCP tools | 43 tools (batch-capable) |
 | Test count | 400+ test cases |
 | Documentation lines | 1,000+ in README |
 | Public API methods | 90+ in TickTickClient |
 | API versions supported | 2 (V1 OAuth2, V2 session) |
+| API hosts supported | 2 (ticktick.com, dida365.com) |
 | Python versions | 3.11, 3.12, 3.13 |
 | Dependencies | 4 core, 6+ dev |
 | PyPI downloads | 3,000+ |

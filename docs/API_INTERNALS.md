@@ -1,6 +1,6 @@
 # TickTick SDK - API Internals Documentation
 
-> **Version**: 0.3.0
+> **Version**: 0.4.2
 > **Last Updated**: January 2026
 > **Audience**: Developers, AI Agents, System Architects
 > **Companion Document**: See `ARCHITECTURE.md` for the overall system design
@@ -44,7 +44,8 @@ This SDK uniquely supports **two distinct TickTick APIs**:
 
 | Aspect | V1 API (Official) | V2 API (Reverse-Engineered) |
 |--------|-------------------|----------------------------|
-| **Base URL** | `https://api.ticktick.com/open/v1` | `https://api.ticktick.com/api/v2` |
+| **Base URL** | `https://api.{host}/open/v1` | `https://api.{host}/api/v2` |
+| **Supported Hosts** | `ticktick.com`, `dida365.com` | `ticktick.com`, `dida365.com` |
 | **Authentication** | OAuth2 Bearer Token | Session Token + Cookies |
 | **Documentation** | Official (limited) | None (reverse-engineered) |
 | **Features** | Tasks, Projects only | Full: Tags, Habits, Focus, Subtasks, Folders |
@@ -67,15 +68,16 @@ The unofficial V2 API provides full access to TickTick's features but requires r
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `api/base.py` | 470 | Abstract base HTTP client |
-| `api/v1/client.py` | 532 | V1 API implementation |
-| `api/v1/auth.py` | 342 | OAuth2 authentication |
-| `api/v1/types.py` | 171 | V1 TypedDict definitions |
+| `api/base.py` | 469 | Abstract base HTTP client |
+| `api/v1/client.py` | 531 | V1 API implementation |
+| `api/v1/auth.py` | 341 | OAuth2 authentication |
+| `api/v1/types.py` | 170 | V1 TypedDict definitions |
 | `api/v2/client.py` | 1653 | V2 API implementation |
-| `api/v2/auth.py` | 367 | Session authentication |
-| `api/v2/types.py` | 799 | V2 TypedDict definitions |
-| `unified/api.py` | 2222 | Unified API layer |
-| `unified/router.py` | 322 | Routing logic |
+| `api/v2/auth.py` | 366 | Session authentication |
+| `api/v2/types.py` | 850 | V2 TypedDict definitions |
+| `unified/api.py` | 2797 | Unified API layer with batch operations |
+| `unified/router.py` | 321 | Routing logic |
+| `constants.py` | 292 | Enums, URLs, host configuration |
 
 ---
 
@@ -346,7 +348,7 @@ class TickTickV1Client(BaseTickTickClient):
 
     @property
     def base_url(self) -> str:
-        return "https://api.ticktick.com/open/v1"
+        return get_api_base_v1()  # Uses configured host (ticktick.com or dida365.com)
 ```
 
 ### 3.2 Constructor
@@ -761,7 +763,7 @@ class TickTickV2Client(BaseTickTickClient):
 
     @property
     def base_url(self) -> str:
-        return "https://api.ticktick.com/api/v2"
+        return get_api_base_v2()  # Uses configured host (ticktick.com or dida365.com)
 ```
 
 ### 5.2 Constructor
@@ -2113,7 +2115,7 @@ def get_fallback_client(self, operation: str) -> tuple[str, object | None]:
 
 ## Section 9: Unified API Layer (UnifiedTickTickAPI)
 
-**File**: `/src/ticktick_sdk/unified/api.py` (2222 lines)
+**File**: `/src/ticktick_sdk/unified/api.py` (2797 lines)
 
 ### 9.1 Purpose
 
@@ -2124,6 +2126,7 @@ The `UnifiedTickTickAPI` class is the main integration point that:
 3. Converts between unified models and API-specific formats
 4. Handles batch operation errors
 5. Verifies resource existence before V2 operations
+6. Provides batch operations for bulk task management (create, update, delete, complete)
 
 ### 9.2 Constructor
 
@@ -2955,14 +2958,39 @@ The sign-on response sets multiple cookies:
 
 ## Appendix B: Constants Reference
 
-**File**: `/src/ticktick_sdk/constants.py`
+**File**: `/src/ticktick_sdk/constants.py` (292 lines)
 
-### B.1 API URLs
+### B.1 API Host Configuration
+
+The SDK supports multiple API hosts via the `TICKTICK_HOST` environment variable:
 
 ```python
-TICKTICK_API_BASE_V1 = "https://api.ticktick.com/open/v1"
-TICKTICK_API_BASE_V2 = "https://api.ticktick.com/api/v2"
-TICKTICK_OAUTH_BASE = "https://ticktick.com/oauth"
+# Supported hosts
+TickTickHost = Literal["ticktick.com", "dida365.com"]
+
+# ticktick.com - International version (default)
+# dida365.com - Chinese version (滴答清单)
+
+# Dynamic URL getters (use these instead of legacy constants)
+def get_api_host() -> TickTickHost:
+    """Get configured host from TICKTICK_HOST env var (default: ticktick.com)"""
+
+def get_api_base_v1(host: TickTickHost | None = None) -> str:
+    """Returns: https://api.{host}/open/v1"""
+
+def get_api_base_v2(host: TickTickHost | None = None) -> str:
+    """Returns: https://api.{host}/api/v2"""
+
+def get_oauth_base(host: TickTickHost | None = None) -> str:
+    """Returns: https://{host}/oauth"""
+```
+
+**Legacy Constants** (for backwards compatibility, use getters instead):
+
+```python
+TICKTICK_API_BASE_V1 = "https://api.ticktick.com/open/v1"  # Default host only
+TICKTICK_API_BASE_V2 = "https://api.ticktick.com/api/v2"   # Default host only
+TICKTICK_OAUTH_BASE = "https://ticktick.com/oauth"         # Default host only
 ```
 
 ### B.2 Status Enums
@@ -3040,5 +3068,5 @@ async with UnifiedTickTickAPI(
 
 ---
 
-*Document generated for TickTick SDK v0.3.0*
+*Document generated for TickTick SDK v0.4.2*
 *This is a comprehensive technical reference for the API layer internals.*

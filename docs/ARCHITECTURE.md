@@ -1,6 +1,6 @@
 # TickTick SDK Architecture Documentation
 
-> **Version**: 0.3.0
+> **Version**: 0.4.2
 > **Last Updated**: January 2026
 > **Audience**: Developers, AI Agents, System Architects
 
@@ -73,21 +73,21 @@ The SDK implements a **three-layer architecture** that separates concerns and pr
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │   LAYER 1: TickTickClient                                                   │
-│   File: src/ticktick_sdk/client/client.py (1,197 lines)                     │
+│   File: src/ticktick_sdk/client/client.py (1,368 lines)                     │
 │                                                                             │
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
 │   │  • User-facing facade with friendly API                             │   │
 │   │  • Convenience methods (get_today_tasks, quick_add, search_tasks)   │   │
 │   │  • Async context manager lifecycle                                  │   │
 │   │  • Type-safe parameters with string-to-enum conversion              │   │
-│   │  • 80+ public methods organized by resource type                    │   │
+│   │  • 90+ public methods including batch operations                    │   │
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │                                        │                                    │
 │                                        ▼                                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │   LAYER 2: UnifiedTickTickAPI                                               │
-│   File: src/ticktick_sdk/unified/api.py (2,222 lines)                       │
+│   File: src/ticktick_sdk/unified/api.py (2,797 lines)                       │
 │                                                                             │
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
 │   │  • Version-agnostic operation implementation                        │   │
@@ -95,6 +95,7 @@ The SDK implements a **three-layer architecture** that separates concerns and pr
 │   │  • Converts between unified models and API-specific formats         │   │
 │   │  • Handles batch response error checking                            │   │
 │   │  • Manages both V1 and V2 client instances                          │   │
+│   │  • Provides batch operations for bulk task management               │   │
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │                                        │                                    │
 │                          ┌─────────────┴─────────────┐                      │
@@ -124,8 +125,8 @@ The SDK implements a **three-layer architecture** that separates concerns and pr
 
 | Layer | Component | Primary Responsibility | Lines of Code |
 |-------|-----------|----------------------|---------------|
-| **1** | `TickTickClient` | User-friendly interface, convenience methods, lifecycle | 1,197 |
-| **2** | `UnifiedTickTickAPI` | API routing, model conversion, error handling | 2,222 |
+| **1** | `TickTickClient` | User-friendly interface, convenience methods, lifecycle, batch operations | 1,368 |
+| **2** | `UnifiedTickTickAPI` | API routing, model conversion, error handling, batch operations | 2,797 |
 | **3a** | `TickTickV1Client` | V1 OAuth2 HTTP operations | 531 |
 | **3b** | `TickTickV2Client` | V2 session HTTP operations | 1,653 |
 
@@ -195,7 +196,8 @@ To provide comprehensive functionality, this SDK reverse-engineers the **unoffic
 
 | Feature | V1 API (Official) | V2 API (Unofficial) |
 |---------|-------------------|---------------------|
-| **Base URL** | `https://api.ticktick.com/open/v1` | `https://api.ticktick.com/api/v2` |
+| **Base URL** | `https://api.{host}/open/v1` | `https://api.{host}/api/v2` |
+| **Supported Hosts** | `ticktick.com`, `dida365.com` | `ticktick.com`, `dida365.com` |
 | **Authentication** | OAuth2 Bearer token | Session token + cookies |
 | **Task CRUD** | Yes | Yes |
 | **Get Task by ID** | Requires `project_id` | No `project_id` needed |
@@ -1481,6 +1483,7 @@ class TickTickSettings(BaseSettings):
 
 | Category | Environment Variable | Type | Default | Required |
 |----------|---------------------|------|---------|----------|
+| **API Host** | `TICKTICK_HOST` | `str` | `ticktick.com` | No |
 | **V1 OAuth2** | `TICKTICK_CLIENT_ID` | `str` | `""` | Yes |
 | | `TICKTICK_CLIENT_SECRET` | `SecretStr` | `""` | Yes |
 | | `TICKTICK_REDIRECT_URI` | `str` | `http://localhost:8080/callback` | No |
@@ -1491,6 +1494,10 @@ class TickTickSettings(BaseSettings):
 | **General** | `TICKTICK_TIMEOUT` | `float` | `30.0` | No |
 | | `TICKTICK_TIMEZONE` | `str` | `"UTC"` | No |
 | | `TICKTICK_DEVICE_ID` | `str` | auto-generated | No |
+
+**Supported API Hosts**:
+- `ticktick.com` - International version (default)
+- `dida365.com` - Chinese version (滴答清单)
 
 ### Secret Handling
 
@@ -2323,7 +2330,7 @@ __all__ = [
 ## Document Information
 
 - **Author**: Technical Documentation System
-- **Based on Source Code Version**: 0.3.0
+- **Based on Source Code Version**: 0.4.2
 - **Total Source Lines Analyzed**: 7,566
 - **Documentation Lines**: 2,200+
 - **Last Generated**: January 2026

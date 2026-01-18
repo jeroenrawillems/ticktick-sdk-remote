@@ -1,6 +1,6 @@
 # TickTick SDK - Data Models Documentation
 
-> **Version**: 0.3.0
+> **Version**: 0.4.2
 > **Last Updated**: January 2026
 > **Audience**: Developers, AI Agents, System Integrators
 
@@ -2143,6 +2143,6 @@ task = await client.create_task(
 
 - **Total Models Documented**: 14 unified models + 6 enums
 - **Source Files Referenced**: 10
-- **Generated For**: TickTick SDK v0.3.0
+- **Generated For**: TickTick SDK v0.4.2
 - **Pydantic Version**: v2.0+
 - **Python Version**: 3.11+

@@ -3,13 +3,23 @@ Pydantic Input Models for TickTick SDK Tools.
 
 This module defines all input validation models used by MCP tools.
 Each model includes proper field constraints, descriptions, and examples.
+
+=== Batch 2 Consolidation (v0.4.0) ===
+
+This version introduces list-based mutations for batch operations:
+- Every create/update/delete operation accepts a list of items
+- A list of 1 = single operation, list of 50 = batch operation
+- Consolidated tools: list_tasks absorbs completed/abandoned/deleted queries
+- update_tasks includes column assignment (replaces move_task_to_column)
+- update_tag includes label rename (replaces rename_tag)
+- update_habit includes archived field (replaces archive/unarchive_habit)
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from enum import Enum
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 
@@ -32,16 +42,18 @@ class BaseMCPInput(BaseModel):
 
 
 # =============================================================================
-# Task Input Models
+# Task Input Models - List-Based for Batch Operations
 # =============================================================================
 
 
-class TaskCreateInput(BaseMCPInput):
-    """Input for creating a new task."""
+class TaskCreateItem(BaseModel):
+    """Single task creation specification for batch operations."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     title: str = Field(
         ...,
-        description="Task title (e.g., 'Review quarterly report', 'Buy groceries')",
+        description="Task title (required)",
         min_length=1,
         max_length=500,
     )
@@ -67,11 +79,11 @@ class TaskCreateInput(BaseMCPInput):
     )
     start_date: Optional[str] = Field(
         default=None,
-        description="Start date in ISO format (e.g., '2025-01-15T09:00:00')",
+        description="Start date in ISO format (e.g., '2025-01-15T09:00:00' or '2025-01-15')",
     )
     due_date: Optional[str] = Field(
         default=None,
-        description="Due date in ISO format (e.g., '2025-01-15T17:00:00')",
+        description="Due date in ISO format (e.g., '2025-01-15T17:00:00' or '2025-01-15')",
     )
     all_day: Optional[bool] = Field(
         default=None,
@@ -93,16 +105,12 @@ class TaskCreateInput(BaseMCPInput):
     )
     recurrence: Optional[str] = Field(
         default=None,
-        description="Recurrence rule in RRULE format (e.g., 'RRULE:FREQ=DAILY;INTERVAL=1')",
+        description="Recurrence rule in RRULE format (e.g., 'RRULE:FREQ=DAILY;INTERVAL=1'). Requires start_date.",
     )
     parent_id: Optional[str] = Field(
         default=None,
-        description="Parent task ID to make this a subtask",
+        description="Parent task ID to make this a subtask. The SDK handles parent assignment after creation.",
         pattern=r"^[a-f0-9]{24}$",
-    )
-    response_format: ResponseFormat = Field(
-        default=ResponseFormat.MARKDOWN,
-        description="Output format: 'markdown' for human-readable, 'json' for machine-readable",
     )
 
     @field_validator("priority")
@@ -110,40 +118,37 @@ class TaskCreateInput(BaseMCPInput):
     def normalize_priority(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return None
-        # Normalize string priorities to lowercase
         return v.lower()
 
 
-class TaskGetInput(BaseMCPInput):
-    """Input for getting a task by ID."""
+class CreateTasksInput(BaseMCPInput):
+    """Create one or more tasks."""
 
-    task_id: str = Field(
+    tasks: List[TaskCreateItem] = Field(
         ...,
-        description="Task identifier (24-character hex string)",
-        pattern=r"^[a-f0-9]{24}$",
-    )
-    project_id: Optional[str] = Field(
-        default=None,
-        description="Project ID (required for V1 API fallback)",
-        pattern=r"^(inbox\d+|[a-f0-9]{24})$",
+        description="Tasks to create (1-50). Each task requires at least a title.",
+        min_length=1,
+        max_length=50,
     )
     response_format: ResponseFormat = Field(
         default=ResponseFormat.MARKDOWN,
-        description="Output format",
+        description="Output format: 'markdown' for human-readable, 'json' for machine-readable",
     )
 
 
-class TaskUpdateInput(BaseMCPInput):
-    """Input for updating a task."""
+class TaskUpdateItem(BaseModel):
+    """Single task update specification for batch operations."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     task_id: str = Field(
         ...,
-        description="Task identifier to update",
+        description="Task identifier to update (required)",
         pattern=r"^[a-f0-9]{24}$",
     )
     project_id: str = Field(
         ...,
-        description="Project ID the task belongs to",
+        description="Project ID the task belongs to (required)",
         pattern=r"^(inbox\d+|[a-f0-9]{24})$",
     )
     title: Optional[str] = Field(
@@ -170,10 +175,38 @@ class TaskUpdateInput(BaseMCPInput):
         default=None,
         description="New due date in ISO format",
     )
+    all_day: Optional[bool] = Field(
+        default=None,
+        description="All-day flag",
+    )
+    time_zone: Optional[str] = Field(
+        default=None,
+        description="New timezone",
+    )
     tags: Optional[List[str]] = Field(
         default=None,
         description="New list of tags (replaces existing)",
         max_length=20,
+    )
+    recurrence: Optional[str] = Field(
+        default=None,
+        description="New recurrence rule in RRULE format",
+    )
+    # Column assignment (absorbs move_task_to_column)
+    column_id: Optional[str] = Field(
+        default=None,
+        description="Kanban column ID to assign task to. Use empty string '' to remove from column.",
+    )
+
+
+class UpdateTasksInput(BaseMCPInput):
+    """Update one or more tasks."""
+
+    tasks: List[TaskUpdateItem] = Field(
+        ...,
+        description="Tasks to update (1-100). Each requires task_id and project_id.",
+        min_length=1,
+        max_length=100,
     )
     response_format: ResponseFormat = Field(
         default=ResponseFormat.MARKDOWN,
@@ -181,12 +214,14 @@ class TaskUpdateInput(BaseMCPInput):
     )
 
 
-class TaskCompleteInput(BaseMCPInput):
-    """Input for completing a task."""
+class TaskIdentifier(BaseModel):
+    """Task identifier for operations requiring task_id and project_id."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     task_id: str = Field(
         ...,
-        description="Task identifier to complete",
+        description="Task identifier",
         pattern=r"^[a-f0-9]{24}$",
     )
     project_id: str = Field(
@@ -196,23 +231,40 @@ class TaskCompleteInput(BaseMCPInput):
     )
 
 
-class TaskDeleteInput(BaseMCPInput):
-    """Input for deleting a task."""
+class CompleteTasksInput(BaseMCPInput):
+    """Complete one or more tasks."""
 
-    task_id: str = Field(
+    tasks: List[TaskIdentifier] = Field(
         ...,
-        description="Task identifier to delete",
-        pattern=r"^[a-f0-9]{24}$",
+        description="Tasks to mark as completed (1-100)",
+        min_length=1,
+        max_length=100,
     )
-    project_id: str = Field(
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN,
+        description="Output format",
+    )
+
+
+class DeleteTasksInput(BaseMCPInput):
+    """Delete one or more tasks (moves to trash)."""
+
+    tasks: List[TaskIdentifier] = Field(
         ...,
-        description="Project ID the task belongs to",
-        pattern=r"^(inbox\d+|[a-f0-9]{24})$",
+        description="Tasks to delete (1-100)",
+        min_length=1,
+        max_length=100,
+    )
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN,
+        description="Output format",
     )
 
 
-class TaskMoveInput(BaseMCPInput):
-    """Input for moving a task between projects."""
+class TaskMoveItem(BaseModel):
+    """Single task move specification for batch operations."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     task_id: str = Field(
         ...,
@@ -231,17 +283,29 @@ class TaskMoveInput(BaseMCPInput):
     )
 
 
-class TaskParentInput(BaseMCPInput):
-    """Input for setting a task's parent (making it a subtask)."""
+class MoveTasksInput(BaseMCPInput):
+    """Move one or more tasks between projects."""
+
+    moves: List[TaskMoveItem] = Field(
+        ...,
+        description="Move operations (1-100)",
+        min_length=1,
+        max_length=100,
+    )
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN,
+        description="Output format",
+    )
+
+
+class TaskParentItem(BaseModel):
+    """Single parent assignment specification for batch operations."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     task_id: str = Field(
         ...,
         description="Task identifier to make a subtask",
-        pattern=r"^[a-f0-9]{24}$",
-    )
-    parent_id: str = Field(
-        ...,
-        description="Parent task identifier",
         pattern=r"^[a-f0-9]{24}$",
     )
     project_id: str = Field(
@@ -249,14 +313,141 @@ class TaskParentInput(BaseMCPInput):
         description="Project ID containing both tasks",
         pattern=r"^(inbox\d+|[a-f0-9]{24})$",
     )
+    parent_id: str = Field(
+        ...,
+        description="Parent task identifier",
+        pattern=r"^[a-f0-9]{24}$",
+    )
+
+
+class SetTaskParentsInput(BaseMCPInput):
+    """Make one or more tasks into subtasks of other tasks."""
+
+    tasks: List[TaskParentItem] = Field(
+        ...,
+        description="Parent assignments (1-50)",
+        min_length=1,
+        max_length=50,
+    )
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN,
+        description="Output format",
+    )
+
+
+class TaskUnparentItem(BaseModel):
+    """Single unparent specification for batch operations."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    task_id: str = Field(
+        ...,
+        description="Task identifier to unparent",
+        pattern=r"^[a-f0-9]{24}$",
+    )
+    project_id: str = Field(
+        ...,
+        description="Project ID containing the task",
+        pattern=r"^(inbox\d+|[a-f0-9]{24})$",
+    )
+
+
+class UnparentTasksInput(BaseMCPInput):
+    """Remove one or more tasks from their parent (make top-level)."""
+
+    tasks: List[TaskUnparentItem] = Field(
+        ...,
+        description="Tasks to unparent (1-50)",
+        min_length=1,
+        max_length=50,
+    )
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN,
+        description="Output format",
+    )
+
+
+class TaskPinItem(BaseModel):
+    """Single pin/unpin specification for batch operations."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    task_id: str = Field(
+        ...,
+        description="Task identifier to pin/unpin",
+        pattern=r"^[a-f0-9]{24}$",
+    )
+    project_id: str = Field(
+        ...,
+        description="Project ID the task belongs to",
+        pattern=r"^(inbox\d+|[a-f0-9]{24})$",
+    )
+    pin: bool = Field(
+        default=True,
+        description="True to pin the task, False to unpin it",
+    )
+
+
+class PinTasksInput(BaseMCPInput):
+    """Pin or unpin one or more tasks."""
+
+    tasks: List[TaskPinItem] = Field(
+        ...,
+        description="Pin operations (1-50)",
+        min_length=1,
+        max_length=50,
+    )
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN,
+        description="Output format",
+    )
+
+
+class TaskGetInput(BaseMCPInput):
+    """Input for getting a task by ID."""
+
+    task_id: str = Field(
+        ...,
+        description="Task identifier (24-character hex string)",
+        pattern=r"^[a-f0-9]{24}$",
+    )
+    project_id: Optional[str] = Field(
+        default=None,
+        description="Project ID (required for V1 API fallback)",
+        pattern=r"^(inbox\d+|[a-f0-9]{24})$",
+    )
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN,
+        description="Output format",
+    )
 
 
 class TaskListInput(BaseMCPInput):
-    """Input for listing tasks."""
+    """
+    List tasks with flexible filtering.
 
+    This unified tool handles all task listing scenarios:
+    - Active tasks (default)
+    - Completed tasks (requires from_date/to_date or days)
+    - Abandoned tasks (requires from_date/to_date or days)
+    - Deleted/trashed tasks
+    """
+
+    # Status filter (absorbs completed/abandoned/deleted tools)
+    status: Literal["active", "completed", "abandoned", "deleted"] = Field(
+        default="active",
+        description=(
+            "Task status filter:\n"
+            "- 'active': Current/pending tasks (default)\n"
+            "- 'completed': Completed tasks (use days or from_date/to_date)\n"
+            "- 'abandoned': Abandoned/won't-do tasks (use days or from_date/to_date)\n"
+            "- 'deleted': Trashed tasks"
+        ),
+    )
+    # Existing filters
     project_id: Optional[str] = Field(
         default=None,
-        description="Filter by project ID. If not provided, returns all tasks.",
+        description="Filter by project ID",
         pattern=r"^(inbox\d+|[a-f0-9]{24})$",
     )
     tag: Optional[str] = Field(
@@ -270,12 +461,30 @@ class TaskListInput(BaseMCPInput):
     )
     due_today: Optional[bool] = Field(
         default=None,
-        description="Filter to only tasks due today",
+        description="Filter to only tasks due today (for active status)",
     )
     overdue: Optional[bool] = Field(
         default=None,
-        description="Filter to only overdue tasks",
+        description="Filter to only overdue tasks (for active status)",
     )
+    # Date range (for completed/abandoned status)
+    from_date: Optional[str] = Field(
+        default=None,
+        description="Start date for completed/abandoned queries (YYYY-MM-DD format)",
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+    )
+    to_date: Optional[str] = Field(
+        default=None,
+        description="End date for completed/abandoned queries (YYYY-MM-DD format)",
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+    )
+    days: int = Field(
+        default=7,
+        description="Number of days to look back for completed/abandoned queries (if from_date/to_date not specified)",
+        ge=1,
+        le=90,
+    )
+    # Pagination
     limit: int = Field(
         default=50,
         description="Maximum number of tasks to return",
@@ -288,76 +497,32 @@ class TaskListInput(BaseMCPInput):
     )
 
 
-class CompletedTasksInput(BaseMCPInput):
-    """Input for listing completed tasks."""
+class SearchInput(BaseMCPInput):
+    """Input for searching tasks."""
 
-    days: int = Field(
-        default=7,
-        description="Number of days to look back",
-        ge=1,
-        le=90,
-    )
-    limit: int = Field(
-        default=50,
-        description="Maximum number of tasks to return",
-        ge=1,
-        le=200,
-    )
-    response_format: ResponseFormat = Field(
-        default=ResponseFormat.MARKDOWN,
-        description="Output format",
-    )
-
-
-class AbandonedTasksInput(BaseMCPInput):
-    """Input for listing abandoned (won't do) tasks."""
-
-    days: int = Field(
-        default=7,
-        description="Number of days to look back",
-        ge=1,
-        le=90,
-    )
-    limit: int = Field(
-        default=50,
-        description="Maximum number of tasks to return",
-        ge=1,
-        le=200,
-    )
-    response_format: ResponseFormat = Field(
-        default=ResponseFormat.MARKDOWN,
-        description="Output format",
-    )
-
-
-class DeletedTasksInput(BaseMCPInput):
-    """Input for listing deleted tasks (in trash)."""
-
-    limit: int = Field(
-        default=50,
-        description="Maximum number of tasks to return",
-        ge=1,
-        le=500,
-    )
-    response_format: ResponseFormat = Field(
-        default=ResponseFormat.MARKDOWN,
-        description="Output format",
-    )
-
-
-class TaskUnparentInput(BaseMCPInput):
-    """Input for removing a task from its parent (unparenting a subtask)."""
-
-    task_id: str = Field(
+    query: str = Field(
         ...,
-        description="Task identifier to unparent",
-        pattern=r"^[a-f0-9]{24}$",
+        description="Search query to match against task titles and content",
+        min_length=1,
+        max_length=200,
     )
-    project_id: str = Field(
-        ...,
-        description="Project ID containing the task",
-        pattern=r"^(inbox\d+|[a-f0-9]{24})$",
+    limit: int = Field(
+        default=20,
+        description="Maximum number of results to return",
+        ge=1,
+        le=100,
     )
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN,
+        description="Output format",
+    )
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Query cannot be empty or whitespace only")
+        return v.strip()
 
 
 # =============================================================================
@@ -508,34 +673,6 @@ class FolderRenameInput(BaseMCPInput):
 
 
 # =============================================================================
-# Task Pinning Input Models
-# =============================================================================
-
-
-class TaskPinInput(BaseMCPInput):
-    """Input for pinning or unpinning a task."""
-
-    task_id: str = Field(
-        ...,
-        description="Task identifier to pin/unpin",
-        pattern=r"^[a-f0-9]{24}$",
-    )
-    project_id: str = Field(
-        ...,
-        description="Project ID the task belongs to",
-        pattern=r"^(inbox\d+|[a-f0-9]{24})$",
-    )
-    pin: bool = Field(
-        default=True,
-        description="True to pin the task, False to unpin it",
-    )
-    response_format: ResponseFormat = Field(
-        default=ResponseFormat.MARKDOWN,
-        description="Output format",
-    )
-
-
-# =============================================================================
 # Column Input Models (Kanban)
 # =============================================================================
 
@@ -622,30 +759,6 @@ class ColumnDeleteInput(BaseMCPInput):
     )
 
 
-class TaskMoveToColumnInput(BaseMCPInput):
-    """Input for moving a task to a kanban column."""
-
-    task_id: str = Field(
-        ...,
-        description="Task identifier to move",
-        pattern=r"^[a-f0-9]{24}$",
-    )
-    project_id: str = Field(
-        ...,
-        description="Project ID the task belongs to",
-        pattern=r"^(inbox\d+|[a-f0-9]{24})$",
-    )
-    column_id: Optional[str] = Field(
-        default=None,
-        description="Target column ID (None to remove from any column)",
-        pattern=r"^[a-f0-9]{24}$",
-    )
-    response_format: ResponseFormat = Field(
-        default=ResponseFormat.MARKDOWN,
-        description="Output format",
-    )
-
-
 # =============================================================================
 # Tag Input Models
 # =============================================================================
@@ -686,23 +799,6 @@ class TagDeleteInput(BaseMCPInput):
     )
 
 
-class TagRenameInput(BaseMCPInput):
-    """Input for renaming a tag."""
-
-    old_name: str = Field(
-        ...,
-        description="Current tag name",
-        min_length=1,
-        max_length=50,
-    )
-    new_name: str = Field(
-        ...,
-        description="New tag name",
-        min_length=1,
-        max_length=50,
-    )
-
-
 class TagMergeInput(BaseMCPInput):
     """Input for merging tags."""
 
@@ -721,11 +817,16 @@ class TagMergeInput(BaseMCPInput):
 
 
 class TagUpdateInput(BaseMCPInput):
-    """Input for updating a tag's properties."""
+    """
+    Update a tag's properties.
+
+    This tool handles color, parent, and rename (label) operations.
+    If label is provided, the tag is renamed first, then other updates are applied.
+    """
 
     name: str = Field(
         ...,
-        description="Tag name (lowercase identifier) to update",
+        description="Current tag name (lowercase identifier) to update",
         min_length=1,
         max_length=50,
     )
@@ -737,6 +838,13 @@ class TagUpdateInput(BaseMCPInput):
     parent: Optional[str] = Field(
         default=None,
         description="New parent tag name (or empty string to remove parent)",
+    )
+    # NEW: Label/rename (absorbs rename_tag tool)
+    label: Optional[str] = Field(
+        default=None,
+        description="New display label to rename the tag to",
+        min_length=1,
+        max_length=50,
     )
     response_format: ResponseFormat = Field(
         default=ResponseFormat.MARKDOWN,
@@ -772,39 +880,6 @@ class FocusStatsInput(BaseMCPInput):
         default=ResponseFormat.MARKDOWN,
         description="Output format",
     )
-
-
-# =============================================================================
-# Search Input Model
-# =============================================================================
-
-
-class SearchInput(BaseMCPInput):
-    """Input for searching tasks."""
-
-    query: str = Field(
-        ...,
-        description="Search query to match against task titles and content",
-        min_length=1,
-        max_length=200,
-    )
-    limit: int = Field(
-        default=20,
-        description="Maximum number of results to return",
-        ge=1,
-        le=100,
-    )
-    response_format: ResponseFormat = Field(
-        default=ResponseFormat.MARKDOWN,
-        description="Output format",
-    )
-
-    @field_validator("query")
-    @classmethod
-    def validate_query(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("Query cannot be empty or whitespace only")
-        return v.strip()
 
 
 # =============================================================================
@@ -919,7 +994,12 @@ class HabitCreateInput(BaseMCPInput):
 
 
 class HabitUpdateInput(BaseMCPInput):
-    """Input for updating a habit."""
+    """
+    Update a habit's properties.
+
+    This tool handles all habit updates including archive/unarchive.
+    Set archived=true to archive, archived=false to unarchive.
+    """
 
     habit_id: str = Field(
         ...,
@@ -979,6 +1059,11 @@ class HabitUpdateInput(BaseMCPInput):
         description="New motivational message",
         max_length=200,
     )
+    # NEW: Archive control (absorbs archive_habit/unarchive_habit)
+    archived: Optional[bool] = Field(
+        default=None,
+        description="Set to true to archive the habit, false to unarchive it",
+    )
     response_format: ResponseFormat = Field(
         default=ResponseFormat.MARKDOWN,
         description="Output format",
@@ -995,8 +1080,10 @@ class HabitDeleteInput(BaseMCPInput):
     )
 
 
-class HabitCheckinInput(BaseMCPInput):
-    """Input for checking in a habit."""
+class HabitCheckinItem(BaseModel):
+    """Single habit check-in specification for batch operations."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     habit_id: str = Field(
         ...,
@@ -1009,27 +1096,25 @@ class HabitCheckinInput(BaseMCPInput):
         ge=0.1,
         le=10000,
     )
-    checkin_date: Optional[date] = Field(
+    checkin_date: Optional[str] = Field(
         default=None,
         description=(
             "Date to check in for (YYYY-MM-DD format). "
             "If not provided, checks in for today. "
-            "Use a past date to backdate the check-in (e.g., for migrating habit history)."
+            "Use a past date to backdate the check-in."
         ),
-    )
-    response_format: ResponseFormat = Field(
-        default=ResponseFormat.MARKDOWN,
-        description="Output format",
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
     )
 
 
-class HabitArchiveInput(BaseMCPInput):
-    """Input for archiving/unarchiving a habit."""
+class CheckinHabitsInput(BaseMCPInput):
+    """Record one or more habit check-ins."""
 
-    habit_id: str = Field(
+    checkins: List[HabitCheckinItem] = Field(
         ...,
-        description="Habit ID to archive/unarchive",
-        pattern=r"^[a-f0-9]{24}$",
+        description="Check-ins to record (1-100). Useful for backdating multiple days.",
+        min_length=1,
+        max_length=100,
     )
     response_format: ResponseFormat = Field(
         default=ResponseFormat.MARKDOWN,
@@ -1054,3 +1139,19 @@ class HabitCheckinsInput(BaseMCPInput):
         default=ResponseFormat.JSON,
         description="Output format (JSON recommended for habit data)",
     )
+
+
+# =============================================================================
+# Backward Compatibility Aliases (Deprecated - will be removed in v0.5.0)
+# =============================================================================
+
+# These maintain compatibility with existing code that uses old names
+TaskCreateInput = CreateTasksInput  # Alias for migration
+TaskUpdateInput = UpdateTasksInput  # Alias for migration
+TaskCompleteInput = CompleteTasksInput  # Alias for migration
+TaskDeleteInput = DeleteTasksInput  # Alias for migration
+TaskMoveInput = MoveTasksInput  # Alias for migration
+TaskParentInput = SetTaskParentsInput  # Alias for migration
+TaskUnparentInput = UnparentTasksInput  # Alias for migration
+TaskPinInput = PinTasksInput  # Alias for migration
+HabitCheckinInput = CheckinHabitsInput  # Alias for migration

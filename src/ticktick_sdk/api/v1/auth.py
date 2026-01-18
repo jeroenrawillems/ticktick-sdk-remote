@@ -26,7 +26,7 @@ import httpx
 from ticktick_sdk.constants import (
     DEFAULT_TIMEOUT,
     OAUTH_SCOPES,
-    TICKTICK_OAUTH_BASE,
+    get_oauth_base,
 )
 from ticktick_sdk.exceptions import TickTickOAuthError
 
@@ -179,7 +179,7 @@ class OAuth2Handler:
             "response_type": "code",
         }
 
-        auth_url = f"{TICKTICK_OAUTH_BASE}/authorize?{urlencode(params)}"
+        auth_url = f"{get_oauth_base()}/authorize?{urlencode(params)}"
         logger.debug("Generated authorization URL: %s", auth_url)
 
         return auth_url, state
@@ -219,7 +219,7 @@ class OAuth2Handler:
                 oauth_error="invalid_state",
             )
 
-        token_url = f"{TICKTICK_OAUTH_BASE}/token"
+        token_url = f"{get_oauth_base()}/token"
 
         # Prepare request data
         data = {
@@ -280,7 +280,7 @@ class OAuth2Handler:
                 oauth_error="invalid_grant",
             )
 
-        token_url = f"{TICKTICK_OAUTH_BASE}/token"
+        token_url = f"{get_oauth_base()}/token"
 
         data = {
             "grant_type": "refresh_token",

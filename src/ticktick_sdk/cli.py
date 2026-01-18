@@ -36,6 +36,75 @@ from pathlib import Path
 from typing import NoReturn
 
 
+import os
+
+# Tool categories for --enabledModules flag
+TOOL_MODULES = {
+    "tasks": [
+        "ticktick_create_tasks",
+        "ticktick_get_task",
+        "ticktick_list_tasks",
+        "ticktick_update_tasks",
+        "ticktick_complete_tasks",
+        "ticktick_delete_tasks",
+        "ticktick_move_tasks",
+        "ticktick_set_task_parents",
+        "ticktick_unparent_tasks",
+        "ticktick_search_tasks",
+        "ticktick_pin_tasks",
+    ],
+    "projects": [
+        "ticktick_list_projects",
+        "ticktick_get_project",
+        "ticktick_create_project",
+        "ticktick_update_project",
+        "ticktick_delete_project",
+    ],
+    "folders": [
+        "ticktick_list_folders",
+        "ticktick_create_folder",
+        "ticktick_rename_folder",
+        "ticktick_delete_folder",
+    ],
+    "columns": [
+        "ticktick_list_columns",
+        "ticktick_create_column",
+        "ticktick_update_column",
+        "ticktick_delete_column",
+    ],
+    "tags": [
+        "ticktick_list_tags",
+        "ticktick_create_tag",
+        "ticktick_update_tag",
+        "ticktick_delete_tag",
+        "ticktick_merge_tags",
+    ],
+    "habits": [
+        "ticktick_habits",
+        "ticktick_habit",
+        "ticktick_habit_sections",
+        "ticktick_create_habit",
+        "ticktick_update_habit",
+        "ticktick_delete_habit",
+        "ticktick_checkin_habits",
+        "ticktick_habit_checkins",
+    ],
+    "user": [
+        "ticktick_get_profile",
+        "ticktick_get_status",
+        "ticktick_get_statistics",
+        "ticktick_get_preferences",
+    ],
+    "focus": [
+        "ticktick_focus_heatmap",
+        "ticktick_focus_by_tag",
+    ],
+}
+
+# All tool names for validation
+ALL_TOOLS = [tool for tools in TOOL_MODULES.values() for tool in tools]
+
+
 def load_dotenv_if_available() -> None:
     """Load .env file if python-dotenv is available."""
     try:
@@ -72,16 +141,80 @@ def get_version() -> str:
         return "unknown"
 
 
-def run_server() -> int:
+def resolve_enabled_tools(
+    enabled_tools: str | None,
+    enabled_modules: str | None,
+) -> list[str] | None:
+    """
+    Resolve enabled tools from CLI arguments.
+
+    Args:
+        enabled_tools: Comma-separated list of specific tool names.
+        enabled_modules: Comma-separated list of module names.
+
+    Returns:
+        List of enabled tool names, or None if all tools should be enabled.
+    """
+    if not enabled_tools and not enabled_modules:
+        return None  # All tools enabled
+
+    result = set()
+
+    # Add tools from --enabledTools
+    if enabled_tools:
+        for tool in enabled_tools.split(","):
+            tool = tool.strip()
+            if tool:
+                if tool not in ALL_TOOLS:
+                    print(f"Warning: Unknown tool '{tool}', skipping", file=sys.stderr)
+                else:
+                    result.add(tool)
+
+    # Add tools from --enabledModules
+    if enabled_modules:
+        for module in enabled_modules.split(","):
+            module = module.strip().lower()
+            if module:
+                if module not in TOOL_MODULES:
+                    print(
+                        f"Warning: Unknown module '{module}'. "
+                        f"Available: {', '.join(TOOL_MODULES.keys())}",
+                        file=sys.stderr,
+                    )
+                else:
+                    result.update(TOOL_MODULES[module])
+
+    return list(result) if result else None
+
+
+def run_server(
+    enabled_tools: str | None = None,
+    enabled_modules: str | None = None,
+) -> int:
     """
     Run the MCP server.
 
     This starts the FastMCP server that exposes TickTick functionality
     as MCP tools for AI assistants.
 
+    Args:
+        enabled_tools: Comma-separated list of specific tools to enable.
+        enabled_modules: Comma-separated list of modules to enable.
+
     Returns:
         Exit code (0 for success, non-zero for error).
     """
+    # Resolve which tools to enable
+    tools_to_enable = resolve_enabled_tools(enabled_tools, enabled_modules)
+
+    # Pass to server via environment variable
+    if tools_to_enable is not None:
+        os.environ["TICKTICK_ENABLED_TOOLS"] = ",".join(tools_to_enable)
+        print(
+            f"Tool filtering enabled: {len(tools_to_enable)} of {len(ALL_TOOLS)} tools",
+            file=sys.stderr,
+        )
+
     from ticktick_sdk.server import main as server_main
 
     server_main()
@@ -163,8 +296,37 @@ Before running the server, ensure your environment variables are set:
   - TICKTICK_ACCESS_TOKEN
   - TICKTICK_USERNAME
   - TICKTICK_PASSWORD
+
+Tool Filtering (reduces context window usage):
+  Use --enabledTools or --enabledModules to load only the tools you need.
+  This can significantly reduce context usage from ~30-40% to ~5-10%.
+
+Available modules: tasks, projects, folders, columns, tags, habits, user, focus
 """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    server_parser.add_argument(
+        "--enabledTools",
+        type=str,
+        default=None,
+        metavar="TOOLS",
+        help=(
+            "Comma-separated list of specific tools to enable. "
+            "Example: --enabledTools ticktick_create_tasks,ticktick_list_tasks"
+        ),
+    )
+
+    server_parser.add_argument(
+        "--enabledModules",
+        type=str,
+        default=None,
+        metavar="MODULES",
+        help=(
+            "Comma-separated list of tool modules to enable. "
+            "Available: tasks, projects, folders, columns, tags, habits, user, focus. "
+            "Example: --enabledModules tasks,projects"
+        ),
     )
 
     # Auth subcommand
@@ -228,7 +390,10 @@ def main() -> int | NoReturn:
     if args.command is None:
         return run_server()
     elif args.command == "server":
-        return run_server()
+        return run_server(
+            enabled_tools=args.enabledTools,
+            enabled_modules=args.enabledModules,
+        )
     elif args.command == "auth":
         return run_auth(manual=args.manual)
     else:

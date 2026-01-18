@@ -7,15 +7,66 @@ used throughout the TickTick SDK.
 
 from __future__ import annotations
 
+import os
 from enum import IntEnum, StrEnum
 from typing import Literal
 
 
 # =============================================================================
-# API Configuration
+# API Host Configuration
 # =============================================================================
 
-# Base URLs
+# Supported hosts
+# - ticktick.com: International version
+# - dida365.com: Chinese version (滴答清单)
+TickTickHost = Literal["ticktick.com", "dida365.com"]
+
+# Default host (can be overridden via TICKTICK_HOST environment variable)
+DEFAULT_HOST: TickTickHost = "ticktick.com"
+
+
+def get_api_host() -> TickTickHost:
+    """
+    Get the configured API host.
+
+    Reads from TICKTICK_HOST environment variable.
+    Defaults to "ticktick.com" if not set or invalid.
+
+    Returns:
+        The API host domain ("ticktick.com" or "dida365.com").
+    """
+    host = os.environ.get("TICKTICK_HOST", DEFAULT_HOST).lower().strip()
+    if host in ("ticktick.com", "dida365.com"):
+        return host  # type: ignore[return-value]
+    # Invalid host, return default
+    return DEFAULT_HOST
+
+
+def get_api_base_v1(host: TickTickHost | None = None) -> str:
+    """Get the V1 API base URL for the specified host."""
+    h = host or get_api_host()
+    return f"https://api.{h}/open/v1"
+
+
+def get_api_base_v2(host: TickTickHost | None = None) -> str:
+    """Get the V2 API base URL for the specified host."""
+    h = host or get_api_host()
+    return f"https://api.{h}/api/v2"
+
+
+def get_oauth_base(host: TickTickHost | None = None) -> str:
+    """Get the OAuth base URL for the specified host."""
+    h = host or get_api_host()
+    return f"https://{h}/oauth"
+
+
+# =============================================================================
+# API Configuration (Legacy - for backwards compatibility)
+# =============================================================================
+
+# These are now dynamic based on TICKTICK_HOST environment variable.
+# Use get_api_base_v1(), get_api_base_v2(), get_oauth_base() for current values.
+# These constants reflect the DEFAULT host and should only be used for reference.
 TICKTICK_API_BASE_V1 = "https://api.ticktick.com/open/v1"
 TICKTICK_API_BASE_V2 = "https://api.ticktick.com/api/v2"
 TICKTICK_OAUTH_BASE = "https://ticktick.com/oauth"
@@ -235,7 +286,7 @@ class APIVersion(StrEnum):
 
     @property
     def base_url(self) -> str:
-        """Get the base URL for this API version."""
+        """Get the base URL for this API version (uses configured host)."""
         if self == APIVersion.V1:
-            return TICKTICK_API_BASE_V1
-        return TICKTICK_API_BASE_V2
+            return get_api_base_v1()
+        return get_api_base_v2()

@@ -26,7 +26,7 @@ import httpx
 
 from ticktick_sdk.constants import (
     DEFAULT_TIMEOUT,
-    TICKTICK_API_BASE_V2,
+    get_api_base_v2,
 )
 from ticktick_sdk.exceptions import TickTickSessionError
 
@@ -212,7 +212,7 @@ class SessionHandler:
         Raises:
             TickTickSessionError: If authentication fails
         """
-        url = f"{TICKTICK_API_BASE_V2}/user/signon"
+        url = f"{get_api_base_v2()}/user/signon"
         params = {"wc": "true", "remember": "true"}
         payload = {"username": username, "password": password}
         headers = self._get_headers()
@@ -289,7 +289,7 @@ class SessionHandler:
             TickTickSessionError: If 2FA verification fails
         """
         # Use the MFA endpoint that pyticktick uses
-        url = f"{TICKTICK_API_BASE_V2}/user/sign/mfa/code/verify"
+        url = f"{get_api_base_v2()}/user/sign/mfa/code/verify"
         payload = {
             "code": totp_code,
             "method": "app",

@@ -40,7 +40,7 @@ from ticktick_sdk.api.v1.types import (
 from ticktick_sdk.constants import (
     APIVersion,
     DEFAULT_TIMEOUT,
-    TICKTICK_API_BASE_V1,
+    get_api_base_v1,
 )
 from ticktick_sdk.exceptions import TickTickAuthenticationError
 
@@ -111,8 +111,8 @@ class TickTickV1Client(BaseTickTickClient):
 
     @property
     def base_url(self) -> str:
-        """Return the base URL for V1 API."""
-        return TICKTICK_API_BASE_V1
+        """Return the base URL for V1 API (uses configured host)."""
+        return get_api_base_v1()
 
     @property
     def is_authenticated(self) -> bool:

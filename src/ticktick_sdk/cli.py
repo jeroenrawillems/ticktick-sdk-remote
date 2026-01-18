@@ -190,6 +190,7 @@ def resolve_enabled_tools(
 def run_server(
     enabled_tools: str | None = None,
     enabled_modules: str | None = None,
+    host: str | None = None,
 ) -> int:
     """
     Run the MCP server.
@@ -200,10 +201,24 @@ def run_server(
     Args:
         enabled_tools: Comma-separated list of specific tools to enable.
         enabled_modules: Comma-separated list of modules to enable.
+        host: API host ("ticktick.com" or "dida365.com").
 
     Returns:
         Exit code (0 for success, non-zero for error).
     """
+    # Set host if specified
+    if host:
+        host_lower = host.lower().strip()
+        if host_lower in ("ticktick.com", "dida365.com"):
+            os.environ["TICKTICK_HOST"] = host_lower
+            print(f"Using API host: {host_lower}", file=sys.stderr)
+        else:
+            print(
+                f"Warning: Invalid host '{host}'. "
+                "Using default (ticktick.com). Valid: ticktick.com, dida365.com",
+                file=sys.stderr,
+            )
+
     # Resolve which tools to enable
     tools_to_enable = resolve_enabled_tools(enabled_tools, enabled_modules)
 
@@ -329,6 +344,18 @@ Available modules: tasks, projects, folders, columns, tags, habits, user, focus
         ),
     )
 
+    server_parser.add_argument(
+        "--host",
+        type=str,
+        default=None,
+        metavar="HOST",
+        help=(
+            "API host to use. Options: ticktick.com (international, default), "
+            "dida365.com (Chinese version). "
+            "Can also be set via TICKTICK_HOST environment variable."
+        ),
+    )
+
     # Auth subcommand
     auth_parser = subparsers.add_parser(
         "auth",
@@ -393,6 +420,7 @@ def main() -> int | NoReturn:
         return run_server(
             enabled_tools=args.enabledTools,
             enabled_modules=args.enabledModules,
+            host=args.host,
         )
     elif args.command == "auth":
         return run_auth(manual=args.manual)

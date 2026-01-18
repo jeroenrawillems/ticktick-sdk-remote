@@ -416,7 +416,6 @@ async def ticktick_create_tasks(params: CreateTasksInput, ctx: Context) -> str:
     Create one or more tasks in TickTick.
 
     Creates tasks with specified properties. Supports batch creation (1-50 tasks).
-    Each task can include title, due date, priority, tags, reminders, and recurrence.
 
     IMPORTANT BEHAVIORS:
     - If no project_id is specified, tasks are created in the inbox
@@ -432,13 +431,18 @@ async def ticktick_create_tasks(params: CreateTasksInput, ctx: Context) -> str:
               Optional fields:
                 - project_id (str): Project ID (defaults to inbox)
                 - content (str): Task notes/description
+                - description (str): Checklist description (for CHECKLIST kind)
+                - kind (str): Task type - 'TEXT' (standard task, default), 'NOTE' (note),
+                  or 'CHECKLIST' (checklist with subtask items)
                 - priority (str): 'none', 'low', 'medium', 'high'
                 - start_date (str): Start date in ISO format (REQUIRED for recurrence)
                 - due_date (str): Due date in ISO format
+                - time_zone (str): IANA timezone (e.g., 'America/New_York')
+                - all_day (bool): Whether task is all-day (no specific time)
                 - tags (list[str]): Tag names to apply
-                - reminders (list[str]): Reminder triggers in iCal format
-                - recurrence (str): RRULE format
-                - parent_id (str): Parent task ID for subtasks
+                - reminders (list[str]): Reminder triggers in iCal format (e.g., 'TRIGGER:-PT30M')
+                - recurrence (str): RRULE format (e.g., 'RRULE:FREQ=DAILY')
+                - parent_id (str): Parent task ID to make this a subtask
             - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
@@ -446,17 +450,22 @@ async def ticktick_create_tasks(params: CreateTasksInput, ctx: Context) -> str:
         On error: Error message with hints for resolution
 
     Examples:
-        Single task:
+        Simple task:
             tasks=[{"title": "Buy groceries"}]
 
-        Multiple tasks:
-            tasks=[
-                {"title": "Task 1", "priority": "high"},
-                {"title": "Task 2", "tags": ["work"]},
-                {"title": "Task 3", "due_date": "2026-01-20"}
-            ]
+        Task with priority and tags:
+            tasks=[{"title": "Review PR", "priority": "high", "tags": ["work", "urgent"]}]
 
-        Task with parent (subtask):
+        Note task (different from standard task):
+            tasks=[{"title": "Meeting notes", "kind": "NOTE", "content": "Discussion points..."}]
+
+        Checklist task:
+            tasks=[{"title": "Packing list", "kind": "CHECKLIST"}]
+
+        Recurring task (requires start_date):
+            tasks=[{"title": "Daily standup", "start_date": "2026-01-20", "recurrence": "RRULE:FREQ=DAILY"}]
+
+        Subtask:
             tasks=[{"title": "Subtask", "parent_id": "parent_task_id", "project_id": "proj_id"}]
     """
     try:
@@ -528,16 +537,18 @@ async def ticktick_get_task(params: TaskGetInput, ctx: Context) -> str:
     """
     Get a task by its ID.
 
-    Retrieves full details of a specific task including title, description,
-    due date, priority, tags, subtasks, and completion status.
+    Retrieves full details of a specific task including title, content,
+    kind (TEXT/NOTE/CHECKLIST), due date, priority, tags, subtasks, and status.
 
     Args:
-        params: Query parameters including:
-            - task_id (str): Task identifier (required)
-            - project_id (str): Project ID (needed for V1 fallback)
+        params: Query parameters:
+            - task_id (str, required): Task identifier
+            - project_id (str): Project ID (optional, used for V1 fallback)
+            - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
-        Formatted task details or error message.
+        Task details including: id, project_id, title, content, kind, status,
+        priority, dates, tags, parent_id, child_ids, and checklist items.
     """
     try:
         client = get_client(ctx)
@@ -682,9 +693,7 @@ async def ticktick_update_tasks(params: UpdateTasksInput, ctx: Context) -> str:
     Update one or more tasks.
 
     Updates specified fields of tasks. Supports batch updates (1-100 tasks).
-    Each update preserves unspecified fields.
-
-    Also supports column assignment for kanban boards via column_id field.
+    Each update preserves unspecified fields (only specified fields are changed).
 
     Args:
         params: Update parameters:
@@ -695,28 +704,39 @@ async def ticktick_update_tasks(params: UpdateTasksInput, ctx: Context) -> str:
               Optional update fields:
                 - title (str): New title
                 - content (str): New content/notes
-                - priority (str): New priority ('none', 'low', 'medium', 'high')
-                - start_date (str): New start date
-                - due_date (str): New due date
-                - tags (list): New tags (replaces existing)
-                - column_id (str): Kanban column ID (empty string to remove from column)
+                - kind (str): Change task type - 'TEXT', 'NOTE', or 'CHECKLIST'
+                - priority (str): 'none', 'low', 'medium', 'high'
+                - start_date (str): Start date in ISO format
+                - due_date (str): Due date in ISO format
+                - time_zone (str): IANA timezone (e.g., 'America/New_York')
+                - all_day (bool): Whether task is all-day
+                - tags (list[str]): New tags (replaces existing tags)
+                - recurrence (str): RRULE format for recurring tasks
+                - column_id (str): Kanban column ID for board assignment
+                  (use empty string '' to remove from column)
             - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
         Summary of updated tasks or error message.
 
     Examples:
-        Single task update:
+        Update priority:
             tasks=[{"task_id": "abc123", "project_id": "proj1", "priority": "high"}]
 
-        Multiple tasks:
+        Convert task to note:
+            tasks=[{"task_id": "abc123", "project_id": "proj1", "kind": "NOTE"}]
+
+        Assign to kanban column:
+            tasks=[{"task_id": "abc1", "project_id": "proj1", "column_id": "col123"}]
+
+        Remove from kanban column:
+            tasks=[{"task_id": "abc1", "project_id": "proj1", "column_id": ""}]
+
+        Batch update multiple tasks:
             tasks=[
                 {"task_id": "abc1", "project_id": "proj1", "title": "Updated 1"},
                 {"task_id": "abc2", "project_id": "proj1", "priority": "low"}
             ]
-
-        Move to kanban column:
-            tasks=[{"task_id": "abc1", "project_id": "proj1", "column_id": "col123"}]
     """
     try:
         client = get_client(ctx)
@@ -1180,13 +1200,16 @@ async def ticktick_list_columns(params: ColumnListInput, ctx: Context) -> str:
     List all kanban columns for a project.
 
     Returns the columns in a kanban-view project, sorted by display order.
-    Only kanban-view projects have columns.
+    Only projects with view_mode='kanban' have columns.
 
     Args:
-        params: Column list input with project_id
+        params: Query parameters:
+            - project_id (str, required): Project ID (must be a kanban project)
+            - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
-        List of columns
+        List of columns with id, name, and sort_order. Use column_id in
+        update_tasks to assign tasks to columns.
     """
     try:
         client = get_client(ctx)
@@ -1334,11 +1357,11 @@ async def ticktick_list_projects(ctx: Context, response_format: ResponseFormat =
     """
     List all projects.
 
-    Retrieves all user projects including their IDs, names, colors,
-    and organization settings.
+    Retrieves all user projects with their details.
 
     Returns:
-        Formatted list of projects or error message.
+        List of projects with: id, name, kind (TASK/NOTE), view_mode (list/kanban/timeline),
+        color, folder_id, and metadata. Use list_tasks with project_id to get tasks.
     """
     try:
         client = get_client(ctx)
@@ -1371,11 +1394,13 @@ async def ticktick_get_project(params: ProjectGetInput, ctx: Context) -> str:
 
     Args:
         params: Query parameters:
-            - project_id (str): Project identifier (required)
-            - include_tasks (bool): Include project tasks (default False)
+            - project_id (str, required): Project identifier
+            - include_tasks (bool): Include all project tasks (default False)
+            - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
-        Formatted project details or error message.
+        Project details: id, name, kind (TASK/NOTE), view_mode (list/kanban/timeline),
+        color, folder_id. If include_tasks=true, also returns all tasks in the project.
     """
     try:
         client = get_client(ctx)
@@ -1419,19 +1444,41 @@ async def ticktick_create_project(params: ProjectCreateInput, ctx: Context) -> s
     """
     Create a new project.
 
-    Creates a new project/list for organizing tasks. Projects can have
-    different view modes and be organized in folders.
+    Creates a new project/list for organizing tasks. Projects support different
+    types, view modes, and can be organized in folders.
 
     Args:
         params: Project creation parameters:
-            - name (str): Project name (required)
-            - color (str): Hex color code (e.g., '#F18181')
-            - kind (str): 'TASK' or 'NOTE'
-            - view_mode (str): 'list', 'kanban', or 'timeline'
-            - folder_id (str): Parent folder ID
+            - name (str, required): Project name
+            - kind (str): Project type:
+              - 'TASK' (default): Standard task list
+              - 'NOTE': Note-based project (for notes rather than tasks)
+            - view_mode (str): How tasks are displayed:
+              - 'list' (default): Traditional list view
+              - 'kanban': Board view with columns (requires creating columns after)
+              - 'timeline': Gantt-style timeline view for scheduling
+            - color (str): Hex color code (e.g., '#F18181', '#4CAFF6')
+            - folder_id (str): Parent folder ID to organize project in a folder
+            - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
         Formatted project details or error message.
+
+    Examples:
+        Simple task list:
+            name="Work Tasks"
+
+        Kanban board for project management:
+            name="Sprint Board", view_mode="kanban"
+
+        Timeline for scheduling:
+            name="Project Timeline", view_mode="timeline"
+
+        Note project:
+            name="Meeting Notes", kind="NOTE"
+
+        Project in a folder:
+            name="Q1 Goals", folder_id="folder123", color="#4CAFF6"
     """
     try:
         client = get_client(ctx)

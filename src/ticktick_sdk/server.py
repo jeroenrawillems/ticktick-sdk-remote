@@ -2704,8 +2704,47 @@ async def ticktick_habit_checkins(params: HabitCheckinsInput, ctx: Context) -> s
 # =============================================================================
 
 
+def _apply_tool_filtering():
+    """
+    Apply tool filtering based on TICKTICK_ENABLED_TOOLS environment variable.
+
+    This removes tools that are not in the enabled list, reducing context window
+    usage when using the MCP server with AI assistants.
+    """
+    import os
+
+    enabled_tools_env = os.environ.get("TICKTICK_ENABLED_TOOLS")
+    if not enabled_tools_env:
+        return  # No filtering, all tools enabled
+
+    enabled_tools = set(enabled_tools_env.split(","))
+
+    # Get all registered tools
+    all_tools = mcp._tool_manager.list_tools()
+    tools_to_remove = []
+
+    for tool in all_tools:
+        if tool.name not in enabled_tools:
+            tools_to_remove.append(tool.name)
+
+    # Remove disabled tools
+    for tool_name in tools_to_remove:
+        try:
+            mcp._tool_manager.remove_tool(tool_name)
+        except Exception as e:
+            logger.warning("Failed to remove tool %s: %s", tool_name, e)
+
+    remaining = len(all_tools) - len(tools_to_remove)
+    logger.info(
+        "Tool filtering applied: %d of %d tools enabled",
+        remaining,
+        len(all_tools),
+    )
+
+
 def main():
     """Main entry point for the TickTick MCP server."""
+    _apply_tool_filtering()
     mcp.run()
 
 

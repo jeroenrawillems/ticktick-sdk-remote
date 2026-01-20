@@ -7,6 +7,8 @@
 
 A comprehensive async Python SDK for [TickTick](https://ticktick.com) with [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) server support.
 
+Includes full support for [Dida365 (滴答清单)](https://dida365.com) as well.
+
 **Use TickTick programmatically from Python, or let AI assistants manage your tasks.**
 
 ## Table of Contents

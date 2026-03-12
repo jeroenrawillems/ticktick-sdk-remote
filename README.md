@@ -162,6 +162,357 @@ All mutation tools accept lists for batch operations (1-100 items).
 | `ticktick_focus_heatmap` | Get focus heatmap data |
 | `ticktick_focus_by_tag` | Get focus time by tag |
 
+### Tasks
+
+#### Creating Tasks
+
+```python
+from datetime import datetime, timedelta
+from ticktick_sdk import TickTickClient
+
+async with TickTickClient.from_settings() as client:
+    # Simple task
+    task = await client.create_task(title="Buy groceries")
+
+    # Task with due date and priority
+    task = await client.create_task(
+        title="Submit report",
+        due_date=datetime.now() + timedelta(days=1),
+        priority="high",  # none, low, medium, high
+    )
+
+    # Task with tags and content
+    task = await client.create_task(
+        title="Review PR #123",
+        content="Check for:\n- Code style\n- Tests\n- Documentation",
+        tags=["work", "code-review"],
+    )
+
+    # Recurring task (MUST include start_date!)
+    task = await client.create_task(
+        title="Daily standup",
+        start_date=datetime(2025, 1, 20, 9, 0),
+        recurrence="RRULE:FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR",
+    )
+
+    # Task with reminder
+    task = await client.create_task(
+        title="Meeting with team",
+        due_date=datetime(2025, 1, 20, 14, 0),
+        reminders=["TRIGGER:-PT15M"],  # 15 minutes before
+    )
+
+    # All-day task
+    task = await client.create_task(
+        title="Project deadline",
+        due_date=datetime(2025, 1, 31),
+        all_day=True,
+    )
+```
+
+#### Managing Tasks
+
+```python
+async with TickTickClient.from_settings() as client:
+    # Get a specific task
+    task = await client.get_task(task_id="...")
+
+    # Update a task
+    task.title = "Updated title"
+    task.priority = 5  # high priority
+    await client.update_task(task)
+
+    # Complete a task
+    await client.complete_task(task_id="...", project_id="...")
+
+    # Delete a task (moves to trash)
+    await client.delete_task(task_id="...", project_id="...")
+
+    # Move task to another project
+    await client.move_task(
+        task_id="...",
+        from_project_id="...",
+        to_project_id="...",
+    )
+```
+
+#### Subtasks
+
+```python
+async with TickTickClient.from_settings() as client:
+    # Create parent task
+    parent = await client.create_task(title="Main task")
+
+    # Create child task
+    child = await client.create_task(title="Subtask")
+
+    # Make it a subtask (parent_id in create is ignored by API)
+    await client.make_subtask(
+        task_id=child.id,
+        parent_id=parent.id,
+        project_id=child.project_id,
+    )
+
+    # Remove parent relationship
+    await client.unparent_subtask(
+        task_id=child.id,
+        project_id=child.project_id,
+    )
+```
+
+#### Querying Tasks
+
+```python
+async with TickTickClient.from_settings() as client:
+    # All active tasks
+    all_tasks = await client.get_all_tasks()
+
+    # Tasks due today
+    today = await client.get_today_tasks()
+
+    # Overdue tasks
+    overdue = await client.get_overdue_tasks()
+
+    # Tasks by tag
+    work_tasks = await client.get_tasks_by_tag("work")
+
+    # Tasks by priority
+    urgent = await client.get_tasks_by_priority("high")
+
+    # Search tasks
+    results = await client.search_tasks("meeting")
+
+    # Recently completed
+    completed = await client.get_completed_tasks(days=7, limit=50)
+
+    # Abandoned tasks ("won't do")
+    abandoned = await client.get_abandoned_tasks(days=30)
+
+    # Deleted tasks (in trash)
+    deleted = await client.get_deleted_tasks(limit=50)
+```
+
+### Projects & Folders
+
+#### Projects
+
+```python
+async with TickTickClient.from_settings() as client:
+    # List all projects
+    projects = await client.get_all_projects()
+    for project in projects:
+        print(f"{project.name} ({project.id})")
+
+    # Get project with all its tasks
+    project_data = await client.get_project_tasks(project_id="...")
+    print(f"Project: {project_data.project.name}")
+    print(f"Tasks: {len(project_data.tasks)}")
+
+    # Create a project
+    project = await client.create_project(
+        name="Q1 Goals",
+        color="#4A90D9",
+        view_mode="kanban",  # list, kanban, timeline
+    )
+
+    # Update a project
+    await client.update_project(
+        project_id=project.id,
+        name="Q1 Goals 2025",
+        color="#FF5500",
+    )
+
+    # Delete a project
+    await client.delete_project(project_id="...")
+```
+
+#### Folders (Project Groups)
+
+```python
+async with TickTickClient.from_settings() as client:
+    # List all folders
+    folders = await client.get_all_folders()
+
+    # Create a folder
+    folder = await client.create_folder(name="Work Projects")
+
+    # Create project in folder
+    project = await client.create_project(
+        name="Client A",
+        folder_id=folder.id,
+    )
+
+    # Rename a folder
+    await client.rename_folder(folder_id=folder.id, name="Work")
+
+    # Delete a folder
+    await client.delete_folder(folder_id="...")
+```
+
+### Tags
+
+Tags in TickTick support hierarchy (parent-child relationships) and custom colors.
+
+```python
+async with TickTickClient.from_settings() as client:
+    # List all tags
+    tags = await client.get_all_tags()
+    for tag in tags:
+        print(f"{tag.label} ({tag.name}) - {tag.color}")
+
+    # Create a tag
+    tag = await client.create_tag(
+        name="urgent",
+        color="#FF0000",
+    )
+
+    # Create nested tag
+    child_tag = await client.create_tag(
+        name="critical",
+        parent="urgent",  # Parent tag name
+    )
+
+    # Rename a tag
+    await client.rename_tag(old_name="urgent", new_name="priority")
+
+    # Update tag color or parent
+    await client.update_tag(
+        name="priority",
+        color="#FF5500",
+    )
+
+    # Merge tags (move all tasks from source to target)
+    await client.merge_tags(source="old-tag", target="new-tag")
+
+    # Delete a tag
+    await client.delete_tag(name="obsolete")
+```
+
+### Habits
+
+TickTick habits are recurring activities you want to track daily.
+
+#### Habit Types
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `Boolean` | Simple yes/no | "Did you exercise today?" |
+| `Real` | Numeric counter | "How many pages did you read?" |
+
+#### Creating and Managing Habits
+
+```python
+async with TickTickClient.from_settings() as client:
+    # List all habits
+    habits = await client.get_all_habits()
+
+    # Boolean habit (yes/no)
+    exercise = await client.create_habit(
+        name="Exercise",
+        color="#4A90D9",
+        reminders=["07:00", "19:00"],
+        target_days=30,
+        encouragement="Stay strong!",
+    )
+
+    # Numeric habit
+    reading = await client.create_habit(
+        name="Read",
+        habit_type="Real",
+        goal=30,           # 30 pages per day
+        step=5,            # +5 button increment
+        unit="Pages",
+    )
+
+    # Check in a habit (today)
+    habit = await client.checkin_habit("habit_id")
+    print(f"Streak: {habit.current_streak} days!")
+
+    # Check in for a past date (backdate)
+    from datetime import date
+    habit = await client.checkin_habit("habit_id", checkin_date=date(2025, 12, 15))
+
+    # Archive/unarchive
+    await client.archive_habit("habit_id")
+    await client.unarchive_habit("habit_id")
+```
+
+#### Habit Repeat Rules (RRULE Format)
+
+| Schedule | RRULE |
+|----------|-------|
+| Daily (every day) | `RRULE:FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR,SA` |
+| Weekdays only | `RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR` |
+| Weekends only | `RRULE:FREQ=WEEKLY;BYDAY=SA,SU` |
+| X times per week | `RRULE:FREQ=WEEKLY;TT_TIMES=5` |
+| Specific days | `RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR` |
+
+### Focus/Pomodoro
+
+```python
+from datetime import date, timedelta
+
+async with TickTickClient.from_settings() as client:
+    # Focus heatmap (like GitHub contribution graph)
+    heatmap = await client.get_focus_heatmap(
+        start_date=date.today() - timedelta(days=90),
+        end_date=date.today(),
+    )
+
+    # Focus time by tag
+    by_tag = await client.get_focus_by_tag(days=30)
+    for tag, seconds in sorted(by_tag.items(), key=lambda x: -x[1]):
+        hours = seconds / 3600
+        print(f"  {tag}: {hours:.1f} hours")
+```
+
+### User & Statistics
+
+```python
+async with TickTickClient.from_settings() as client:
+    # User profile
+    profile = await client.get_profile()
+    print(f"Username: {profile.username}")
+
+    # Account status
+    status = await client.get_status()
+    print(f"Pro User: {status.is_pro}")
+    print(f"Inbox ID: {status.inbox_id}")
+
+    # Productivity statistics
+    stats = await client.get_statistics()
+    print(f"Level: {stats.level}")
+    print(f"Score: {stats.score}")
+    print(f"Tasks completed today: {stats.today_completed}")
+```
+
+### Error Handling
+
+```python
+from ticktick_sdk import (
+    TickTickClient,
+    TickTickError,
+    TickTickNotFoundError,
+    TickTickAuthenticationError,
+    TickTickRateLimitError,
+    TickTickValidationError,
+)
+
+async with TickTickClient.from_settings() as client:
+    try:
+        task = await client.get_task("nonexistent-id")
+    except TickTickNotFoundError as e:
+        print(f"Task not found: {e}")
+    except TickTickAuthenticationError:
+        print("Authentication failed - check credentials")
+    except TickTickRateLimitError:
+        print("Rate limited - wait and retry")
+    except TickTickValidationError as e:
+        print(f"Invalid input: {e}")
+    except TickTickError as e:
+        print(f"TickTick error: {e}")
+```
+
 ---
 
 ## Example Conversations

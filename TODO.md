@@ -1,0 +1,14 @@
+# Wallacast - Task List
+
+> **Instructions for Claude Code:** This is a general task list for development. Mark tasks done by changing `[ ]` to `[x]`. Add new tasks as they come up. Keep it organized and actionable. If you notice a to-do has already been completed by the user or a previous Claude instance but it it hasn't been marked yet, ask the user whether you can mark it done.
+
+## Current Sprint
+
+> **Priority Key:** 1 = Highest priority (do first, saves money!), 2 = High priority, 3 = Medium priority, 4+ = Lower priority (do later)
+
+### Features to Implement
+- [ ] 
+
+## Completed Recently ✅
+
+- [x]

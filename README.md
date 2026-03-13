@@ -87,19 +87,17 @@ These are all the variables you'll set in Railway's dashboard. Required ones mus
 
 #### Claude.ai (Web)
 
-1. Go to **claude.ai** → **Settings** → **Connectors**
+1. Go to **claude.ai** → **Customize** → **Connectors**
 2. Click **"Add custom connector"**
-3. Enter a name (e.g., "ticktick")
-4. Enter URL: `https://your-app-production.up.railway.app/mcp`
-5. Click **"Add"**
-
-#### Claude Mobile (iOS/Android)
-
-Once added via claude.ai, the connector automatically appears in the Claude mobile app. You cannot add new connectors from mobile — only use ones already configured on the web.
+3. Enter a name (e.g., "TickTick")
+4. Enter URL: `https://your-app-production.up.railway.app/mcp` (Don't forget /mcp!)
+5. Enter TICKTICK_CLIENT_ID and TICKTICK_CLIENT_SECRET
+6. Click **"Add"**
 
 #### Claude Desktop / Claude Code (Local Alternative)
 
 If you want to run the server locally instead, see the [original repo](https://github.com/dev-mirzabicer/ticktick-sdk) which supports stdio transport for local MCP usage.
+Note that it also misses some other features, like correct timezones and displaying priority levels when asking Claude to list tasks.
 
 ---
 

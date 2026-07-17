@@ -1278,6 +1278,9 @@ class UnifiedTickTickAPI:
 
         Pinned tasks appear at the top of task lists in TickTick.
 
+        Thin wrapper over batch_pin_tasks (the shared full-task round-trip that
+        keeps a pin from wiping the task's other fields).
+
         Args:
             task_id: Task ID
             project_id: Project ID
@@ -1285,33 +1288,17 @@ class UnifiedTickTickAPI:
         Returns:
             Updated task with pinned_time set
         """
-        self._ensure_initialized()
-        if not self._router.has_v2:  # type: ignore
-            raise TickTickAPIUnavailableError(
-                "Task pinning requires V2 API",
-                details={"operation": "pin_task"},
-            )
-
-        # Get current task to ensure it exists
-        task = await self.get_task(task_id, project_id)
-
-        # Set pinned_time to current timestamp in TickTick format
-        now = datetime.now(timezone.utc)
-        pinned_time_str = now.strftime("%Y-%m-%dT%H:%M:%S.000+0000")
-
-        await self._v2_client.update_task(  # type: ignore
-            task_id=task_id,
-            project_id=project_id,
-            pinned_time=pinned_time_str,
+        result = await self.batch_pin_tasks(
+            [{"task_id": task_id, "project_id": project_id, "pin": True}]
         )
-
-        # Update task object
-        task.pinned_time = now
-        return task
+        return result[0]
 
     async def unpin_task(self, task_id: str, project_id: str) -> Task:
         """
         Unpin a task.
+
+        Thin wrapper over batch_pin_tasks (the shared full-task round-trip that
+        keeps an unpin from wiping the task's other fields).
 
         Args:
             task_id: Task ID
@@ -1320,26 +1307,10 @@ class UnifiedTickTickAPI:
         Returns:
             Updated task with pinned_time cleared
         """
-        self._ensure_initialized()
-        if not self._router.has_v2:  # type: ignore
-            raise TickTickAPIUnavailableError(
-                "Task unpinning requires V2 API",
-                details={"operation": "unpin_task"},
-            )
-
-        # Get current task to ensure it exists
-        task = await self.get_task(task_id, project_id)
-
-        # Clear pinned_time by sending empty string
-        await self._v2_client.update_task(  # type: ignore
-            task_id=task_id,
-            project_id=project_id,
-            pinned_time="",  # Empty string signals "clear"
+        result = await self.batch_pin_tasks(
+            [{"task_id": task_id, "project_id": project_id, "pin": False}]
         )
-
-        # Update task object
-        task.pinned_time = None
-        return task
+        return result[0]
 
     # =========================================================================
     # Batch Task Operations (V2 only)
@@ -1800,6 +1771,19 @@ class UnifiedTickTickAPI:
 
         V2-only operation.
 
+        Pinning is a task *update* under the hood - TickTick has no dedicated
+        pin endpoint. We stamp pinnedTime on the task (a timestamp to pin, null
+        to unpin) and re-save it. Because the V2 /batch/task endpoint REPLACES
+        the task with whatever we send, we round-trip the *full* pre-fetched
+        task via to_v2_dict(for_update=True). Sending a sparse
+        {id, projectId, pinnedTime} body (the historic bug) made TickTick wipe
+        every omitted field: start/due dates, isAllDay, timeZone, tags, and the
+        recurrence anchors. This matches what TickTick's own web client sends.
+
+        All tasks are written in a single /batch/task call (one round-trip for
+        the whole set, not one per task). Each task is still pre-fetched first,
+        so a missing task surfaces as a real 404 before any write happens.
+
         Args:
             pin_operations: List of pin specifications. Each dict must contain:
                 - task_id: Task ID
@@ -1807,10 +1791,11 @@ class UnifiedTickTickAPI:
                 - pin: True to pin, False to unpin
 
         Returns:
-            List of updated Task objects
+            List of updated Task objects, in the same order as the input.
 
         Raises:
             TickTickAPIUnavailableError: If V2 API is not available
+            TickTickNotFoundError: If any referenced task does not exist
         """
         self._ensure_initialized()
 
@@ -1820,19 +1805,37 @@ class UnifiedTickTickAPI:
                 operation="batch_pin_tasks",
             )
 
-        results: list[Task] = []
+        if not pin_operations:
+            return []
+
+        now = datetime.now(timezone.utc)
+        tasks: list[Task] = []
+        v2_updates: list[dict[str, Any]] = []
+
         for op in pin_operations:
             task_id = op["task_id"]
             project_id = op["project_id"]
             pin = op.get("pin", True)
 
-            if pin:
-                task = await self.pin_task(task_id, project_id)
-            else:
-                task = await self.unpin_task(task_id, project_id)
-            results.append(task)
+            # Pre-fetch the full task so we can re-send its complete
+            # representation (and so a missing task 404s before any write).
+            task = await self.get_task(task_id, project_id)
+            task.pinned_time = now if pin else None
 
-        return results
+            v2_update = task.to_v2_dict(for_update=True)
+            # to_v2_dict does not serialize columnId; preserve the task's kanban
+            # column so pinning never knocks it out of its board column.
+            if task.column_id:
+                v2_update["columnId"] = task.column_id
+
+            tasks.append(task)
+            v2_updates.append(v2_update)
+
+        response = await self._v2_client.batch_tasks(update=v2_updates)  # type: ignore
+        _check_batch_response_errors(
+            response, "batch_pin_tasks", [u["id"] for u in v2_updates]
+        )
+        return tasks
 
     # =========================================================================
     # Column Operations (Kanban, V2 only)

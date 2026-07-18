@@ -74,7 +74,9 @@ These are all the variables you'll set in Railway's dashboard. Required ones mus
 
 > **Timezone:** TickTick stores all-day task dates as midnight in your local timezone, expressed as UTC. Without `TICKTICK_TIMEZONE`, a task due March 14 in Brussels appears as March 13. Set this to your [IANA timezone name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) — the "TZ identifier" column on that page. Common examples: `Europe/Brussels`, `Europe/London`, `America/New_York`, `America/Chicago`, `America/Los_Angeles`, `Asia/Tokyo`, `Asia/Shanghai`, `Australia/Sydney`.
 
-> **Note on MCP_BEARER_TOKEN**: Claude.ai's custom connector UI does not currently support bearer token auth. If you set this variable, requests without the correct `Authorization: Bearer <token>` header will be rejected. Leave it unset for Claude.ai compatibility.
+> **Note on MCP_BEARER_TOKEN**: If you set this variable, requests without the correct `Authorization: Bearer <token>` header are rejected (`/health` stays exempt). Claude.ai supports sending such a header only through its **Request headers** feature, which is in beta and rolled out gradually. Verified 2026-07-18 on the maintainer's account: the "Add custom connector" dialog offered only Name, Remote MCP server URL, and OAuth Client ID/Secret, with no Request headers section, so bearer auth is not usable there yet and this variable stays unset.
+>
+> ⚠️ **Leaving it unset means the server is completely open.** This project is single-user by design, so anyone who reaches `/mcp` acts as the account owner, with full read, write, and delete access to their TickTick data. If your server is deployed on a public URL, read [docs/SECURING_THE_SERVER.md](docs/SECURING_THE_SERVER.md) before assuming an unguessable hostname is enough.
 
 ### Step 4: Deploy to Railway
 

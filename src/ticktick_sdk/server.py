@@ -99,6 +99,7 @@ import asyncio
 import json
 import logging
 import os
+import secrets as _secrets
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, AsyncIterator
@@ -107,6 +108,7 @@ from zoneinfo import ZoneInfo
 from mcp.server.fastmcp import FastMCP, Context
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from ticktick_sdk.client import TickTickClient
 from ticktick_sdk.settings import get_settings
@@ -3474,15 +3476,72 @@ def _apply_tool_filtering():
     )
 
 
+class SecretPathMiddleware:
+    """Gate every request behind a secret first path segment.
+
+    Why this exists: Claude.ai's connector UI cannot send an ``Authorization``
+    header unless the account has the ``static_headers`` beta, which makes
+    ``MCP_BEARER_TOKEN`` unusable from there. The connector does store the whole
+    URL, so putting a shared secret in the path is the remaining way to stop
+    someone who guesses the hostname from reaching the MCP endpoint. See
+    ``docs/SECURING_THE_SERVER.md``.
+
+    ``/health`` deliberately stays reachable without the secret, because Railway's
+    healthcheck hits it and a failing healthcheck fails the deploy. It reveals
+    only that something is deployed here, no data and no tools.
+
+    A missing or wrong prefix returns a flat 404 rather than a 401, so probing the
+    bare ``/mcp`` looks like an empty host rather than a guarded one.
+    """
+
+    def __init__(self, app: ASGIApp, secret: str) -> None:
+        self.app = app
+        self.secret = secret.strip("/")
+        self.prefix = "/" + self.secret
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if path == "/health":
+            await self.app(scope, receive, send)
+            return
+
+        remainder = self._strip_prefix(path)
+        if remainder is None:
+            response = JSONResponse({"error": "not found"}, status_code=404)
+            await response(scope, receive, send)
+            return
+
+        scope = dict(scope)
+        scope["path"] = remainder
+        raw_path = scope.get("raw_path")
+        if raw_path:
+            scope["raw_path"] = raw_path[len(self.prefix.encode()) :] or b"/"
+        await self.app(scope, receive, send)
+
+    def _strip_prefix(self, path: str) -> str | None:
+        """Return the path minus the secret segment, or None when it doesn't match."""
+        if not path.startswith("/"):
+            return None
+        first, slash, rest = path[1:].partition("/")
+        # compare_digest keeps the comparison constant-time
+        if not _secrets.compare_digest(first, self.secret):
+            return None
+        return "/" + rest if slash else "/"
+
+
 def main():
     """Main entry point for the TickTick MCP server."""
     _annotate_tool_apis()
     _apply_tool_filtering()
 
     bearer_token = os.environ.get("MCP_BEARER_TOKEN")
+    secret_path = (os.environ.get("MCP_SECRET_PATH") or "").strip("/")
 
     import uvicorn
-    from starlette.types import ASGIApp, Receive, Scope, Send
 
     starlette_app: ASGIApp = mcp.streamable_http_app()
 
@@ -3515,8 +3574,32 @@ def main():
 
         starlette_app = BearerTokenMiddleware(starlette_app, bearer_token)
 
+    # Wrapped last so it sits outermost: a wrong path 404s before anything else runs.
+    if secret_path:
+        if "/" in secret_path:
+            raise ValueError(
+                "MCP_SECRET_PATH must be a single path segment with no '/' in it"
+            )
+        if len(secret_path) < 16:
+            logger.warning(
+                "MCP_SECRET_PATH is only %d characters long. Use at least 16, e.g. "
+                'python -c "import secrets; print(secrets.token_urlsafe(24))"',
+                len(secret_path),
+            )
+        starlette_app = SecretPathMiddleware(starlette_app, secret_path)
+        logger.info("Secret path enabled: the MCP endpoint is /<secret>/mcp")
+
+    if not bearer_token and not secret_path:
+        logger.warning(
+            "SERVER IS UNAUTHENTICATED: neither MCP_BEARER_TOKEN nor MCP_SECRET_PATH "
+            "is set. This server is single-user, so anyone who reaches this URL acts "
+            "as the account owner, with full read/write/delete access to their "
+            "TickTick data. See docs/SECURING_THE_SERVER.md."
+        )
+
     port = int(os.environ.get("PORT", "8000"))
-    logger.info("Starting TickTick MCP server on 0.0.0.0:%d/mcp", port)
+    endpoint = "/<secret>/mcp" if secret_path else "/mcp"
+    logger.info("Starting TickTick MCP server on 0.0.0.0:%d%s", port, endpoint)
 
     config = uvicorn.Config(
         starlette_app,

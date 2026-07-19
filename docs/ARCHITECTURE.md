@@ -816,10 +816,22 @@ For exact request/response JSON for any of these, see `docs/api-analysis/`.
 
 Both are properties of a task **update**, not separate endpoints:
 
-- **Pin/unpin:** set `pinnedTime` in the update — an ISO timestamp to pin, empty
-  string `""` to unpin.
+- **Pin/unpin:** set `pinnedTime` in the update — an ISO timestamp to pin,
+  `null` to unpin. Because `/batch/task` **replaces** the task (see batch
+  semantics below), pin/unpin must send the *full* task body, not just
+  `{id, pinnedTime}`, or every omitted field (start/due dates, `isAllDay`,
+  `timeZone`, tags, recurrence anchors) is wiped. So `batch_pin_tasks`
+  pre-fetches each task, flips only `pinned_time`, and re-serializes the whole
+  task via `Task.to_v2_dict(for_update=True)` (plus a `columnId` passthrough),
+  exactly like TickTick's own web client. `pin_task`/`unpin_task` are thin
+  single-item wrappers over `batch_pin_tasks`. (Sending a sparse
+  `{id, projectId, pinnedTime}` body was the pin data-loss bug fixed 2026-07-17,
+  the same failure mode as the recurrence-anchor and `is_all_day` wipes.)
 - **Move to kanban column:** set `columnId` in the update — a column id to
-  assign, empty string `""` to remove from any column.
+  assign, empty string `""` to remove from any column. (Note: `move_task_to_column`
+  in `unified/api.py` still sends a sparse body and has the same latent wipe bug,
+  but no MCP tool calls it — the `update_tasks` tool moves columns via the safe
+  pre-fetch-and-merge `batch_update_tasks` path.)
 
 ### Batch semantics (the important part)
 
@@ -1102,6 +1114,17 @@ project) is one call. **Scope: active tasks only** — completed/abandoned/trash
 aren't searched (tracked in `TODO.md`). Both `list_tasks` and `search_tasks`
 render through the shared `_render_task_page` helper, the single place that calls
 the paginator with `offset` + `limit`.
+
+**`kind` filter (both tools).** `kind` is an **include-list**: pass one kind or
+several (`["TEXT","CHECKLIST"]`) and a task is kept when `(t.kind or "TEXT")` is
+in the set — so `["TEXT","CHECKLIST"]` is how you drop notes without an explicit
+"exclude" parameter. The input model (`tools/inputs.py`) types it as
+`Optional[List[Literal["TEXT","NOTE","CHECKLIST"]]]` with a `mode="before"`
+validator (`_coerce_kind_to_list`) that wraps a lone string into a one-element
+list, so `kind="NOTE"` and `kind=["NOTE"]` are equivalent. `search_tasks` filters
+active tasks only; on `list_tasks` the `kind` filter runs **after** the
+per-status fetch, so it applies to every status (a completed or trashed `NOTE` is
+still a `NOTE`), unlike the other `list_tasks` filters which are active-only.
 
 **Per-task content cap in list views.** Task notes can be huge, so JSON *list*
 views truncate `content` to `LIST_CONTENT_MAX_CHARS = 1000`, set

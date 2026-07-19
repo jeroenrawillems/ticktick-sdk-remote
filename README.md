@@ -166,6 +166,7 @@ Summarized changes since [dev-mirzabicer/ticktick-sdk](https://github.com/dev-mi
 - [x] `due_before` filter — active tasks due on or before a date
 - [x] `due_after` filter — active tasks due on or after a date (combine with `due_before` for ranges)
 - [x] `has_due_date` filter — find scheduled or unscheduled tasks
+- [x] `kind` filter — accepts one kind or a list, e.g. `kind=["TEXT","CHECKLIST"]` to drop notes from a listing. Applies to every status
 - [x] `from_date`/`to_date` now honored for completed/abandoned status (previously silently ignored)
 
 **Pagination & response sizing**
@@ -178,7 +179,7 @@ Summarized changes since [dev-mirzabicer/ticktick-sdk](https://github.com/dev-mi
 
 **Task search** (`ticktick_search_tasks`)
 - [x] Newest-first by default (`sort=created_desc`) plus a `sort` param (`created_*`, `modified_*`, `due_*`, `priority_desc`, `title_asc`) — previously results were oldest-first, which truncated the newest matches away under a limit
-- [x] Structured filters: `project_id`, `kind` (TEXT/NOTE/CHECKLIST), `tag`, `priority`, and `due_before`/`due_after`/`created_before`/`created_after`
+- [x] Structured filters: `project_id`, `kind` (TEXT/NOTE/CHECKLIST, one or a list like `["TEXT","CHECKLIST"]`), `tag`, `priority`, and `due_before`/`due_after`/`created_before`/`created_after`
 - [x] `query` is now optional — omit it for a pure filter lookup (e.g. "latest NOTE in project X" via `project_id` + `kind=NOTE` + `limit=1`)
 - [x] Optional `sort` on `ticktick_list_tasks` too (defaults to the existing per-status order)
 
@@ -213,14 +214,14 @@ All mutation tools accept lists for batch operations (1-100 items).
 |------|-------------|
 | `ticktick_create_tasks` | Create 1-50 tasks with titles, dates, tags, etc. |
 | `ticktick_get_task` | Get task details by ID |
-| `ticktick_list_tasks` | List tasks (active/completed/abandoned/deleted via status filter; supports `due_before` / `due_after` for date-range filtering — combine both for a range; optional `sort`). **Paginated** — pass `offset` to continue; `total` is the true count. |
+| `ticktick_list_tasks` | List tasks (active/completed/abandoned/deleted via status filter; supports `due_before` / `due_after` for date-range filtering — combine both for a range; `kind` filter, one or a list; optional `sort`). **Paginated** — pass `offset` to continue; `total` is the true count. |
 | `ticktick_update_tasks` | Update 1-100 tasks (includes column assignment) |
 | `ticktick_complete_tasks` | Complete 1-100 tasks |
 | `ticktick_delete_tasks` | Delete 1-100 tasks (moves to trash) |
 | `ticktick_move_tasks` | Move 1-50 tasks between projects |
 | `ticktick_set_task_parents` | Set parent-child relationships for 1-50 tasks |
 | `ticktick_unparent_tasks` | Remove parent relationships from 1-50 tasks |
-| `ticktick_search_tasks` | Search **active** tasks by text and/or filters (`project_id`, `kind`, `tag`, `priority`, due/created date ranges). Optional `query`; newest-first by default with a `sort` param. **Paginated** — pass `offset` to continue; `total` is the true count. |
+| `ticktick_search_tasks` | Search **active** tasks by text and/or filters (`project_id`, `kind` — one or a list, `tag`, `priority`, due/created date ranges). Optional `query`; newest-first by default with a `sort` param. **Paginated** — pass `offset` to continue; `total` is the true count. |
 | `ticktick_pin_tasks` | Pin or unpin 1-100 tasks |
 
 ### Project Tools

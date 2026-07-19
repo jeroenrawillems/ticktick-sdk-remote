@@ -830,6 +830,9 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
             - column_id (str): Filter by kanban column (active only, use with project_id)
             - tag (str): Filter by tag name
             - priority (str): Filter by priority level
+            - kind (list or str): Only these task kinds - 'TEXT', 'NOTE', 'CHECKLIST'.
+              Pass a list like ['TEXT','CHECKLIST'] to exclude notes. A single string
+              also works. Applies to every status.
             - due_today (bool): Only tasks due today (active only, uses TICKTICK_TIMEZONE)
             - overdue (bool): Only overdue tasks (active only, uses TICKTICK_TIMEZONE)
             - due_before (str): Active tasks due on or before this date, e.g. '2026-03-16' (uses TICKTICK_TIMEZONE)
@@ -859,6 +862,7 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
         - Due in a date range: status="active", due_after="2026-03-16", due_before="2026-03-20"
         - Unscheduled tasks: status="active", has_due_date=False
         - Only tasks with a due date: status="active", has_due_date=True
+        - Actionable tasks only (no notes): status="active", kind=["TEXT", "CHECKLIST"]
 
     Field defaults: fields at their default are omitted to save space. A field
     absent from a task is at its default: missing `content` = no notes; missing
@@ -958,6 +962,12 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
 
         else:
             tasks = await client.get_all_tasks()
+
+        # Kind filter applies across every status (a completed or trashed NOTE
+        # is still a NOTE), so it runs after the status-specific fetch.
+        if params.kind:
+            kinds = set(params.kind)
+            tasks = [t for t in tasks if (t.kind or "TEXT") in kinds]
 
         # Deterministic sort so paginated calls return a stable order
         # (TickTick's list endpoints don't guarantee one). An explicit
@@ -1403,6 +1413,7 @@ async def ticktick_search_tasks(params: SearchInput, ctx: Context) -> str:
     Examples:
         - Keyword: query="meeting"
         - Latest note in a project: project_id="...", kind="NOTE", limit=1
+        - Actionable matches only (no notes): query="report", kind=["TEXT", "CHECKLIST"]
         - High-priority matches, newest due first: query="report", priority="high", sort="due_desc"
 
     Field defaults: fields at their default are omitted to save space. A field
@@ -1441,7 +1452,8 @@ async def ticktick_search_tasks(params: SearchInput, ctx: Context) -> str:
         if params.project_id:
             tasks = [t for t in tasks if t.project_id == params.project_id]
         if params.kind:
-            tasks = [t for t in tasks if (t.kind or "TEXT") == params.kind]
+            kinds = set(params.kind)
+            tasks = [t for t in tasks if (t.kind or "TEXT") in kinds]
         if params.tag:
             tag_lower = params.tag.lower()
             tasks = [t for t in tasks if any(tg.lower() == tag_lower for tg in t.tags)]

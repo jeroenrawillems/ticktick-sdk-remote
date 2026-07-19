@@ -96,6 +96,7 @@ Tools return clear, actionable error messages:
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -3438,6 +3439,77 @@ def _annotate_tool_apis() -> None:
         tool.description = f"{tool.description.rstrip()}\n\n{tag}" if tool.description else tag
 
 
+def _client_label(ctx: Any) -> str:
+    """Identify the caller from the MCP handshake, e.g. "TrackyTime/1.0".
+
+    Clients send clientInfo (name + version) in ``initialize``. The SDK keeps it
+    on the session, so it can be attached to every call without the client doing
+    anything extra. Returns "unknown" rather than raising: a log line must never
+    be the reason a tool fails.
+    """
+    try:
+        params = getattr(getattr(ctx, "session", None), "client_params", None)
+        info = getattr(params, "clientInfo", None)
+        if info is None:
+            return "unknown"
+        name = getattr(info, "name", None) or "unknown"
+        version = getattr(info, "version", None)
+        return f"{name}/{version}" if version else str(name)
+    except Exception:
+        return "unknown"
+
+
+def _install_call_logging() -> None:
+    """Log every tool call with the tool name and which client made it.
+
+    Without this the logs show only "Initializing TickTick MCP session...", so
+    when several clients share one deployment (say a phone app and a scheduled
+    routine) there is no way to tell whose call misbehaved. Wrapping the tool
+    functions in one place beats editing 44 tools, and keeps the identity lookup
+    next to the call it describes.
+
+    Failures here are swallowed: logging is a diagnostic aid, and a server that
+    refuses to start because it could not wrap a log line would be worse than one
+    with quieter logs.
+    """
+    try:
+        tools = mcp._tool_manager.list_tools()
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Could not install tool-call logging: %s", e)
+        return
+
+    wrapped = 0
+    for tool in tools:
+        fn = tool.fn
+        if getattr(fn, "_ticktick_call_logged", False):
+            continue  # idempotent, in case this runs twice
+
+        # Defaults bind the current tool, otherwise every wrapper would close
+        # over the last one in the loop.
+        @functools.wraps(fn)
+        async def wrapper(*args, _fn=fn, _name=tool.name, **kwargs):
+            ctx = kwargs.get("ctx")
+            client = _client_label(ctx)
+            logger.info("tool call: %s | client=%s", _name, client)
+            try:
+                return await _fn(*args, **kwargs)
+            except Exception as e:
+                # Tools normally convert failures into text for the model, so an
+                # exception reaching here is worth recording against its caller.
+                logger.warning("tool failed: %s | client=%s | %s", _name, client, e)
+                raise
+
+        wrapper._ticktick_call_logged = True
+        try:
+            tool.fn = wrapper
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning("Could not wrap %s for logging: %s", tool.name, e)
+            continue
+        wrapped += 1
+
+    logger.info("Tool-call logging enabled for %d tools", wrapped)
+
+
 def _apply_tool_filtering():
     """
     Apply tool filtering based on TICKTICK_ENABLED_TOOLS environment variable.
@@ -3537,6 +3609,8 @@ def main():
     """Main entry point for the TickTick MCP server."""
     _annotate_tool_apis()
     _apply_tool_filtering()
+    # After filtering, so tools that were removed are not wrapped needlessly.
+    _install_call_logging()
 
     bearer_token = os.environ.get("MCP_BEARER_TOKEN")
     secret_path = (os.environ.get("MCP_SECRET_PATH") or "").strip("/")
@@ -3626,6 +3700,8 @@ def main_stdio():
     """
     _annotate_tool_apis()
     _apply_tool_filtering()
+    # After filtering, so tools that were removed are not wrapped needlessly.
+    _install_call_logging()
     logger.info("Starting TickTick MCP server over stdio")
     mcp.run(transport="stdio")
 

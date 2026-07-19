@@ -3490,13 +3490,21 @@ def _install_call_logging() -> None:
         async def wrapper(*args, _fn=fn, _name=tool.name, **kwargs):
             ctx = kwargs.get("ctx")
             client = _client_label(ctx)
+            # Only the tool name and the caller. Arguments and results are
+            # deliberately never logged: they carry task titles, note bodies and
+            # dates, and these logs are read in a hosting dashboard.
             logger.info("tool call: %s | client=%s", _name, client)
             try:
                 return await _fn(*args, **kwargs)
             except Exception as e:
-                # Tools normally convert failures into text for the model, so an
-                # exception reaching here is worth recording against its caller.
-                logger.warning("tool failed: %s | client=%s | %s", _name, client, e)
+                # The exception TYPE only. Messages are not safe to log here:
+                # pydantic validation errors quote the offending payload back
+                # (e.g. input_value={'tasks': [{'title': ...}]}), which would put
+                # real task content in the logs. The full error still reaches the
+                # calling client, where it can be read privately.
+                logger.warning(
+                    "tool failed: %s | client=%s | %s", _name, client, type(e).__name__
+                )
                 raise
 
         wrapper._ticktick_call_logged = True

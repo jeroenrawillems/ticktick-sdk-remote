@@ -95,3 +95,44 @@ async def test_call_is_logged_with_tool_name_and_client(caplog):
     logged = "\n".join(r.getMessage() for r in caplog.records)
     assert f"tool call: {tool.name}" in logged
     assert "client=TrackyTime/1.0" in logged
+
+
+async def test_failures_log_the_type_but_not_the_message(caplog):
+    """Error messages must not reach the logs: they quote the payload back.
+
+    A pydantic validation error includes input_value={'tasks': [{'title': ...}]},
+    so logging str(exception) would put real task titles into a hosting
+    dashboard. Only the exception class name is safe.
+    """
+    secret = "Dentist appointment 14:00"
+
+    async def boom(**kwargs):
+        raise ValueError(f"validation failed: input_value={{'title': '{secret}'}}")
+
+    class FakeTool:
+        name = "ticktick_fake"
+        fn = staticmethod(boom)
+
+    tool = FakeTool()
+    wrapped = None
+
+    # Wrap by hand with the same logic the installer uses.
+    from ticktick_sdk.server import _install_call_logging  # noqa: F401
+    import ticktick_sdk.server as srv
+
+    original = srv.mcp._tool_manager.list_tools
+    srv.mcp._tool_manager.list_tools = lambda: [tool]
+    try:
+        srv._install_call_logging()
+        wrapped = tool.fn
+    finally:
+        srv.mcp._tool_manager.list_tools = original
+
+    with caplog.at_level(logging.INFO, logger="ticktick_sdk.server"):
+        with pytest.raises(ValueError):
+            await wrapped(ctx=ctx_for("TrackyTime", "1.0"))
+
+    logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert "ValueError" in logged, "the exception type should be recorded"
+    assert secret not in logged, "personal data leaked into the logs"
+    assert "input_value" not in logged

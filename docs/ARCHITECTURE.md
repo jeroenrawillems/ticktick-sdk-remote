@@ -1115,6 +1115,17 @@ aren't searched (tracked in `TODO.md`). Both `list_tasks` and `search_tasks`
 render through the shared `_render_task_page` helper, the single place that calls
 the paginator with `offset` + `limit`.
 
+**`kind` filter (both tools).** `kind` is an **include-list**: pass one kind or
+several (`["TEXT","CHECKLIST"]`) and a task is kept when `(t.kind or "TEXT")` is
+in the set — so `["TEXT","CHECKLIST"]` is how you drop notes without an explicit
+"exclude" parameter. The input model (`tools/inputs.py`) types it as
+`Optional[List[Literal["TEXT","NOTE","CHECKLIST"]]]` with a `mode="before"`
+validator (`_coerce_kind_to_list`) that wraps a lone string into a one-element
+list, so `kind="NOTE"` and `kind=["NOTE"]` are equivalent. `search_tasks` filters
+active tasks only; on `list_tasks` the `kind` filter runs **after** the
+per-status fetch, so it applies to every status (a completed or trashed `NOTE` is
+still a `NOTE`), unlike the other `list_tasks` filters which are active-only.
+
 **Per-task content cap in list views.** Task notes can be huge, so JSON *list*
 views truncate `content` to `LIST_CONTENT_MAX_CHARS = 1000`, set
 `content_truncated: true` on affected tasks, and add a top-level `_content_hint`

@@ -173,6 +173,32 @@ async def test_search_kind_filter_excludes_other_kinds():
     assert all(t["kind"] == "NOTE" for t in d["tasks"])
 
 
+async def test_search_kind_list_includes_multiple_kinds():
+    """kind accepts a list: ['TEXT','CHECKLIST'] returns both but drops NOTE."""
+    tasks = [
+        Task(id="a" * 24, project_id=PROJ, title="Daily brief note", kind="NOTE",
+             created_time=datetime(2026, 1, 1, tzinfo=UTC)),
+        Task(id="b" * 24, project_id=PROJ, title="Daily brief text", kind="TEXT",
+             created_time=datetime(2026, 1, 2, tzinfo=UTC)),
+        Task(id="c" * 24, project_id=PROJ, title="Daily brief list", kind="CHECKLIST",
+             created_time=datetime(2026, 1, 3, tzinfo=UTC)),
+    ]
+    out = await server.ticktick_search_tasks(
+        SearchInput(query="Daily brief", kind=["TEXT", "CHECKLIST"], response_format="json"),
+        _ctx(FakeClient(tasks)),
+    )
+    d = json.loads(out)
+    assert d["total"] == 2
+    assert {t["kind"] for t in d["tasks"]} == {"TEXT", "CHECKLIST"}
+
+
+async def test_search_kind_rejects_invalid_value():
+    """A bogus kind is rejected by the Literal validation."""
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        SearchInput(kind=["BOGUS"])
+
+
 async def test_search_no_matches_is_clean_zero():
     client = FakeClient(make_briefs(5))
     out = await server.ticktick_search_tasks(
@@ -228,6 +254,37 @@ async def test_list_tasks_sort_override_priority_desc():
     )
     prios = [t["priority"] for t in json.loads(out)["tasks"]]
     assert prios == [5, 3, 1, 0]
+
+
+async def test_list_tasks_kind_list_excludes_notes():
+    """list_tasks gained a kind filter; ['TEXT','CHECKLIST'] drops NOTE tasks."""
+    tasks = [
+        Task(id="a" * 24, project_id=PROJ, title="note", kind="NOTE"),
+        Task(id="b" * 24, project_id=PROJ, title="text", kind="TEXT"),
+        Task(id="c" * 24, project_id=PROJ, title="list", kind="CHECKLIST"),
+    ]
+    out = await server.ticktick_list_tasks(
+        TaskListInput(status="active", kind=["TEXT", "CHECKLIST"], response_format="json"),
+        _ctx(FakeClient(tasks)),
+    )
+    d = json.loads(out)
+    assert d["total"] == 2
+    assert {t["kind"] for t in d["tasks"]} == {"TEXT", "CHECKLIST"}
+
+
+async def test_list_tasks_kind_scalar_coerced_to_list():
+    """A single string still works: kind='NOTE' behaves like ['NOTE']."""
+    tasks = [
+        Task(id="a" * 24, project_id=PROJ, title="note", kind="NOTE"),
+        Task(id="b" * 24, project_id=PROJ, title="text", kind="TEXT"),
+    ]
+    out = await server.ticktick_list_tasks(
+        TaskListInput(status="active", kind="NOTE", response_format="json"),
+        _ctx(FakeClient(tasks)),
+    )
+    d = json.loads(out)
+    assert d["total"] == 1
+    assert d["tasks"][0]["kind"] == "NOTE"
 
 
 # =============================================================================

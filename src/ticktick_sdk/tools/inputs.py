@@ -68,6 +68,19 @@ class BaseMCPInput(BaseModel):
     )
 
 
+def _coerce_kind_to_list(v: object) -> object:
+    """Accept either a single kind string or a list of them.
+
+    Lets a caller pass ``kind='NOTE'`` or ``kind=['TEXT','CHECKLIST']``
+    interchangeably. A lone string is wrapped into a one-element list before
+    the per-item validation runs; anything else (a real list, or None) is
+    passed through untouched so it validates normally.
+    """
+    if isinstance(v, str):
+        return [v]
+    return v
+
+
 # =============================================================================
 # Task Input Models - List-Based for Batch Operations
 # =============================================================================
@@ -511,6 +524,16 @@ class TaskListInput(BaseMCPInput):
         description="Filter by priority: 'none', 'low', 'medium', 'high'",
         pattern=r"^(none|low|medium|high)$",
     )
+    kind: Optional[List[Literal["TEXT", "NOTE", "CHECKLIST"]]] = Field(
+        default=None,
+        description=(
+            "Only return tasks of these kinds. One or more of 'TEXT' (standard "
+            "task), 'NOTE', 'CHECKLIST'. Pass a list to include several, e.g. "
+            "['TEXT','CHECKLIST'] to exclude notes. A single string like 'NOTE' "
+            "also works. Applies to every status (active/completed/abandoned/"
+            "deleted)."
+        ),
+    )
     due_today: Optional[bool] = Field(
         default=None,
         description="Filter to only tasks due today (for active status)",
@@ -583,6 +606,11 @@ class TaskListInput(BaseMCPInput):
         description="Output format",
     )
 
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _normalize_kind(cls, v: object) -> object:
+        return _coerce_kind_to_list(v)
+
 
 class SearchInput(BaseMCPInput):
     """Search active tasks by text and/or structured filters.
@@ -610,10 +638,14 @@ class SearchInput(BaseMCPInput):
         description="Only return tasks in this project.",
         pattern=r"^(inbox\d+|[a-f0-9]{24})$",
     )
-    kind: Optional[str] = Field(
+    kind: Optional[List[Literal["TEXT", "NOTE", "CHECKLIST"]]] = Field(
         default=None,
-        description="Only return tasks of this kind: 'TEXT', 'NOTE', or 'CHECKLIST'.",
-        pattern=r"^(TEXT|NOTE|CHECKLIST)$",
+        description=(
+            "Only return tasks of these kinds. One or more of 'TEXT', 'NOTE', "
+            "'CHECKLIST'. Pass a list to include several, e.g. "
+            "['TEXT','CHECKLIST'] to exclude notes. A single string like 'NOTE' "
+            "also works."
+        ),
     )
     tag: Optional[str] = Field(
         default=None,
@@ -673,6 +705,11 @@ class SearchInput(BaseMCPInput):
         default=ResponseFormat.MARKDOWN,
         description="Output format",
     )
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _normalize_kind(cls, v: object) -> object:
+        return _coerce_kind_to_list(v)
 
     @field_validator("query")
     @classmethod

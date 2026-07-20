@@ -96,9 +96,11 @@ Tools return clear, actionable error messages:
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
+import secrets as _secrets
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, AsyncIterator
@@ -107,6 +109,7 @@ from zoneinfo import ZoneInfo
 from mcp.server.fastmcp import FastMCP, Context
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from ticktick_sdk.client import TickTickClient
 from ticktick_sdk.settings import get_settings
@@ -3448,6 +3451,85 @@ def _annotate_tool_apis() -> None:
         tool.description = f"{tool.description.rstrip()}\n\n{tag}" if tool.description else tag
 
 
+def _client_label(ctx: Any) -> str:
+    """Identify the caller from the MCP handshake, e.g. "TrackyTime/1.0".
+
+    Clients send clientInfo (name + version) in ``initialize``. The SDK keeps it
+    on the session, so it can be attached to every call without the client doing
+    anything extra. Returns "unknown" rather than raising: a log line must never
+    be the reason a tool fails.
+    """
+    try:
+        params = getattr(getattr(ctx, "session", None), "client_params", None)
+        info = getattr(params, "clientInfo", None)
+        if info is None:
+            return "unknown"
+        name = getattr(info, "name", None) or "unknown"
+        version = getattr(info, "version", None)
+        return f"{name}/{version}" if version else str(name)
+    except Exception:
+        return "unknown"
+
+
+def _install_call_logging() -> None:
+    """Log every tool call with the tool name and which client made it.
+
+    Without this the logs show only "Initializing TickTick MCP session...", so
+    when several clients share one deployment (say a phone app and a scheduled
+    routine) there is no way to tell whose call misbehaved. Wrapping the tool
+    functions in one place beats editing 44 tools, and keeps the identity lookup
+    next to the call it describes.
+
+    Failures here are swallowed: logging is a diagnostic aid, and a server that
+    refuses to start because it could not wrap a log line would be worse than one
+    with quieter logs.
+    """
+    try:
+        tools = mcp._tool_manager.list_tools()
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Could not install tool-call logging: %s", e)
+        return
+
+    wrapped = 0
+    for tool in tools:
+        fn = tool.fn
+        if getattr(fn, "_ticktick_call_logged", False):
+            continue  # idempotent, in case this runs twice
+
+        # Defaults bind the current tool, otherwise every wrapper would close
+        # over the last one in the loop.
+        @functools.wraps(fn)
+        async def wrapper(*args, _fn=fn, _name=tool.name, **kwargs):
+            ctx = kwargs.get("ctx")
+            client = _client_label(ctx)
+            # Only the tool name and the caller. Arguments and results are
+            # deliberately never logged: they carry task titles, note bodies and
+            # dates, and these logs are read in a hosting dashboard.
+            logger.info("tool call: %s | client=%s", _name, client)
+            try:
+                return await _fn(*args, **kwargs)
+            except Exception as e:
+                # The exception TYPE only. Messages are not safe to log here:
+                # pydantic validation errors quote the offending payload back
+                # (e.g. input_value={'tasks': [{'title': ...}]}), which would put
+                # real task content in the logs. The full error still reaches the
+                # calling client, where it can be read privately.
+                logger.warning(
+                    "tool failed: %s | client=%s | %s", _name, client, type(e).__name__
+                )
+                raise
+
+        wrapper._ticktick_call_logged = True
+        try:
+            tool.fn = wrapper
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning("Could not wrap %s for logging: %s", tool.name, e)
+            continue
+        wrapped += 1
+
+    logger.info("Tool-call logging enabled for %d tools", wrapped)
+
+
 def _apply_tool_filtering():
     """
     Apply tool filtering based on TICKTICK_ENABLED_TOOLS environment variable.
@@ -3486,15 +3568,74 @@ def _apply_tool_filtering():
     )
 
 
+class SecretPathMiddleware:
+    """Gate every request behind a secret first path segment.
+
+    Why this exists: Claude.ai's connector UI cannot send an ``Authorization``
+    header unless the account has the ``static_headers`` beta, which makes
+    ``MCP_BEARER_TOKEN`` unusable from there. The connector does store the whole
+    URL, so putting a shared secret in the path is the remaining way to stop
+    someone who guesses the hostname from reaching the MCP endpoint. See
+    ``docs/SECURING_THE_SERVER.md``.
+
+    ``/health`` deliberately stays reachable without the secret, because Railway's
+    healthcheck hits it and a failing healthcheck fails the deploy. It reveals
+    only that something is deployed here, no data and no tools.
+
+    A missing or wrong prefix returns a flat 404 rather than a 401, so probing the
+    bare ``/mcp`` looks like an empty host rather than a guarded one.
+    """
+
+    def __init__(self, app: ASGIApp, secret: str) -> None:
+        self.app = app
+        self.secret = secret.strip("/")
+        self.prefix = "/" + self.secret
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if path == "/health":
+            await self.app(scope, receive, send)
+            return
+
+        remainder = self._strip_prefix(path)
+        if remainder is None:
+            response = JSONResponse({"error": "not found"}, status_code=404)
+            await response(scope, receive, send)
+            return
+
+        scope = dict(scope)
+        scope["path"] = remainder
+        raw_path = scope.get("raw_path")
+        if raw_path:
+            scope["raw_path"] = raw_path[len(self.prefix.encode()) :] or b"/"
+        await self.app(scope, receive, send)
+
+    def _strip_prefix(self, path: str) -> str | None:
+        """Return the path minus the secret segment, or None when it doesn't match."""
+        if not path.startswith("/"):
+            return None
+        first, slash, rest = path[1:].partition("/")
+        # compare_digest keeps the comparison constant-time
+        if not _secrets.compare_digest(first, self.secret):
+            return None
+        return "/" + rest if slash else "/"
+
+
 def main():
     """Main entry point for the TickTick MCP server."""
     _annotate_tool_apis()
     _apply_tool_filtering()
+    # After filtering, so tools that were removed are not wrapped needlessly.
+    _install_call_logging()
 
     bearer_token = os.environ.get("MCP_BEARER_TOKEN")
+    secret_path = (os.environ.get("MCP_SECRET_PATH") or "").strip("/")
 
     import uvicorn
-    from starlette.types import ASGIApp, Receive, Scope, Send
 
     starlette_app: ASGIApp = mcp.streamable_http_app()
 
@@ -3527,8 +3668,32 @@ def main():
 
         starlette_app = BearerTokenMiddleware(starlette_app, bearer_token)
 
+    # Wrapped last so it sits outermost: a wrong path 404s before anything else runs.
+    if secret_path:
+        if "/" in secret_path:
+            raise ValueError(
+                "MCP_SECRET_PATH must be a single path segment with no '/' in it"
+            )
+        if len(secret_path) < 16:
+            logger.warning(
+                "MCP_SECRET_PATH is only %d characters long. Use at least 16, e.g. "
+                'python -c "import secrets; print(secrets.token_urlsafe(24))"',
+                len(secret_path),
+            )
+        starlette_app = SecretPathMiddleware(starlette_app, secret_path)
+        logger.info("Secret path enabled: the MCP endpoint is /<secret>/mcp")
+
+    if not bearer_token and not secret_path:
+        logger.warning(
+            "SERVER IS UNAUTHENTICATED: neither MCP_BEARER_TOKEN nor MCP_SECRET_PATH "
+            "is set. This server is single-user, so anyone who reaches this URL acts "
+            "as the account owner, with full read/write/delete access to their "
+            "TickTick data. See docs/SECURING_THE_SERVER.md."
+        )
+
     port = int(os.environ.get("PORT", "8000"))
-    logger.info("Starting TickTick MCP server on 0.0.0.0:%d/mcp", port)
+    endpoint = "/<secret>/mcp" if secret_path else "/mcp"
+    logger.info("Starting TickTick MCP server on 0.0.0.0:%d%s", port, endpoint)
 
     config = uvicorn.Config(
         starlette_app,
@@ -3555,6 +3720,8 @@ def main_stdio():
     """
     _annotate_tool_apis()
     _apply_tool_filtering()
+    # After filtering, so tools that were removed are not wrapped needlessly.
+    _install_call_logging()
     logger.info("Starting TickTick MCP server over stdio")
     mcp.run(transport="stdio")
 

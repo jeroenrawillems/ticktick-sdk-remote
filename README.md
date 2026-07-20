@@ -68,13 +68,18 @@ These are all the variables you'll set in Railway's dashboard. Required ones mus
 | `TICKTICK_V2_TOKEN` | No | Optional override for the session token — normally unnecessary, it's auto-extracted from the `t` cookie in `TICKTICK_V2_COOKIES`. |
 | `TICKTICK_V2_IMPERSONATE` | No | Browser profile used for the V2 transport to get past TickTick's anti-bot (which 429s plain Python clients). Default `chrome`. Set to `off` to use plain httpx. Requires the `curl_cffi` dependency (included). |
 | `MCP_BEARER_TOKEN` | No | Bearer token for server authentication — see note below |
+| `MCP_SECRET_PATH` | **Strongly recommended** | Secret first path segment required on every request except `/health`. With it set, the MCP endpoint becomes `/<secret>/mcp` and the bare `/mcp` returns 404. This is the practical way to protect a public deployment, because Claude.ai stores the full URL but usually cannot send an auth header — see note below |
 | `PORT` | No | Server port (default: `8000`, Railway sets this automatically) |
 
 > **`TICKTICK_DEVICE_ID`:** TickTick tracks the devices logging into your account. Without this env var, every Railway redeploy invents a new random device id, so each redeploy looks like *"a stranger on a new device just logged in with your password"* — which can trigger TickTick's anti-bot CAPTCHA wall (`need_captcha`) and break V2 sign-on. Pick any stable 24-character hex string (e.g. the value printed in your first deploy's logs as `TICKTICK_DEVICE_ID is not set... auto-generated: <value>`) and paste it into Railway.
 
 > **Timezone:** TickTick stores all-day task dates as midnight in your local timezone, expressed as UTC. Without `TICKTICK_TIMEZONE`, a task due March 14 in Brussels appears as March 13. Set this to your [IANA timezone name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) — the "TZ identifier" column on that page. Common examples: `Europe/Brussels`, `Europe/London`, `America/New_York`, `America/Chicago`, `America/Los_Angeles`, `Asia/Tokyo`, `Asia/Shanghai`, `Australia/Sydney`.
 
-> **Note on MCP_BEARER_TOKEN**: Claude.ai's custom connector UI does not currently support bearer token auth. If you set this variable, requests without the correct `Authorization: Bearer <token>` header will be rejected. Leave it unset for Claude.ai compatibility.
+> ⚠️ **This server is single-user, so anyone who can reach `/mcp` acts as the account owner**, with full read, write, and delete access to their TickTick data. If you deploy it on a public URL, set `MCP_SECRET_PATH` (below). With neither `MCP_SECRET_PATH` nor `MCP_BEARER_TOKEN` set, the server is completely open and logs a warning saying so at startup. Full reasoning and alternatives: [`docs/SECURING_THE_SERVER.md`](docs/SECURING_THE_SERVER.md).
+
+> **Note on MCP_BEARER_TOKEN**: if set, requests without the correct `Authorization: Bearer <token>` header are rejected (`/health` stays exempt). Claude.ai can only send such a header through its **Request headers** feature, which is in beta and rolled out gradually. Verified 2026-07-18: an account without that beta sees only Name, Remote MCP server URL, and OAuth Client ID/Secret in the "Add custom connector" dialog, with no way to add a header. So on Claude.ai this variable is usually unusable, which is exactly why `MCP_SECRET_PATH` exists. If your MCP client *can* send headers (Claude Desktop, Claude Code, Cursor), prefer the bearer token: it keeps the secret out of the URL. The two can be combined.
+
+> **Note on MCP_SECRET_PATH**: generate one with `python -c "import secrets; print(secrets.token_urlsafe(24))"`. It must be a single path segment with no `/` inside it, and the server warns if it is shorter than 16 characters. Changing it invalidates the old URL, so you must update the connector afterwards. Honest limitation: a secret in a URL is weaker than a header, because URLs get recorded in proxy and server logs. It is a large improvement over an open endpoint, not a perfect one.
 
 ### Step 4: Deploy to Railway
 
@@ -91,12 +96,17 @@ These are all the variables you'll set in Railway's dashboard. Required ones mus
 
 #### Claude.ai (Web)
 
-1. Go to **claude.ai** → **Customize** → **Connectors**
+1. Go to **claude.ai** → **Customize** → **Connectors** (older accounts: **Settings** → **Connectors**)
 2. Click **"Add custom connector"**
 3. Enter a name (e.g., "TickTick")
-4. Enter URL: `https://your-app-production.up.railway.app/mcp` (Don't forget /mcp!)
-5. Enter TICKTICK_CLIENT_ID and TICKTICK_CLIENT_SECRET
-6. Click **"Add"**
+4. Enter the URL, and don't forget the `/mcp` at the end:
+   - with `MCP_SECRET_PATH` set (recommended): `https://your-app-production.up.railway.app/<your-secret>/mcp`
+   - without it: `https://your-app-production.up.railway.app/mcp`
+5. Click **"Add"**
+
+> **On the OAuth Client ID / Client Secret fields:** this server has no OAuth endpoints of its own, so it never reads them. `TICKTICK_CLIENT_ID` / `TICKTICK_CLIENT_SECRET` authenticate *this server to TickTick*, which is the opposite direction, and pasting them into the connector achieves nothing. You can leave both fields blank.
+
+> **Changing `MCP_SECRET_PATH` later** changes the URL, and a connector's URL generally cannot be edited in place, so you will need to remove the connector and add it again.
 
 #### Claude Desktop / Claude Code (Local Alternative)
 

@@ -515,16 +515,13 @@ def format_task_json(
             if not payload.get(key):  # None / "" / 0 / False / []
                 payload.pop(key, None)
 
-    # Trash flag. `deleted` is a separate axis from `status`, so a trashed task
-    # otherwise reads as status_label "Active" — this is the only signal it's
-    # binned. In the full-fidelity detail view (omit_defaults=False) we always
-    # emit an explicit true/false so a caller can rely on the field being there
-    # (e.g. right after ticktick_get_task). In compact list/search views
-    # (omit_defaults=True) we emit it only when trashed (blank == not trashed)
-    # to save response budget.
-    trashed = bool(getattr(task, "deleted", 0))
-    if trashed or not omit_defaults:
-        payload["in_trash"] = trashed
+    # Trash flag: emit ONLY when the task is actually trashed. Blank (key
+    # absent) means "not trashed", uniformly across detail and list views, so a
+    # not-trashed task never carries an in_trash:false. `deleted` is a separate
+    # axis from `status`, so a trashed task otherwise reads as status_label
+    # "Active" and in_trash:true is the only signal it's binned.
+    if getattr(task, "deleted", 0):
+        payload["in_trash"] = True
     return payload
 
 

@@ -299,15 +299,13 @@ from ticktick_sdk.tools.formatting import (  # noqa: E402
 )
 
 
-def test_format_task_json_in_trash_detail_vs_list():
+def test_format_task_json_in_trash_only_when_trashed():
     trashed = Task(id="a" * 24, project_id=PROJ, title="binned", status=0, deleted=1)
     live = Task(id="b" * 24, project_id=PROJ, title="alive", status=0, deleted=0)
-    # Detail view (omit_defaults=False, the get_task path): always explicit
-    # true/false so a client can rely on the field being present.
+    # in_trash: true only when trashed; omitted otherwise, in BOTH the detail
+    # view and the compact list view (no in_trash:false clutter anywhere).
     assert _fmt_json(trashed)["in_trash"] is True
-    assert _fmt_json(live)["in_trash"] is False
-    # Compact list/search view (omit_defaults=True): only when trashed, blank
-    # otherwise.
+    assert "in_trash" not in _fmt_json(live)
     assert _fmt_json(trashed, omit_defaults=True)["in_trash"] is True
     assert "in_trash" not in _fmt_json(live, omit_defaults=True)
 
@@ -380,7 +378,7 @@ class _UpdateFakeClient(FakeClient):
         }
 
 
-async def test_update_tasks_response_surfaces_per_task_in_trash():
+async def test_update_tasks_response_flags_trashed_task():
     tid = "a" * 24
     from ticktick_sdk.tools.inputs import UpdateTasksInput
     out = await server.ticktick_update_tasks(
@@ -396,7 +394,7 @@ async def test_update_tasks_response_surfaces_per_task_in_trash():
     assert "_in_trash" not in d["response"]
 
 
-async def test_update_tasks_in_trash_false_for_live_task():
+async def test_update_tasks_omits_in_trash_for_live_task():
     tid = "a" * 24
     from ticktick_sdk.tools.inputs import UpdateTasksInput
     out = await server.ticktick_update_tasks(
@@ -406,7 +404,8 @@ async def test_update_tasks_in_trash_false_for_live_task():
         ),
         _ctx(_UpdateFakeClient({tid: False})),
     )
-    assert json.loads(out)["tasks"][0]["in_trash"] is False
+    # Not trashed -> no in_trash key at all (no false clutter).
+    assert json.loads(out)["tasks"] == [{"task_id": tid}]
 
 
 # =============================================================================

@@ -1476,6 +1476,11 @@ class UnifiedTickTickAPI:
 
         priority_map = {"none": 0, "low": 1, "medium": 3, "high": 5}
         v2_updates: list[dict[str, Any]] = []
+        # Pre-edit trash state per task, captured from the pre-fetch below so
+        # the caller can tell it just edited something that was in the bin
+        # (a trashed task reads as status "Active" and updates on it succeed).
+        # Free: we already fetch each task, so this costs no extra API call.
+        in_trash_by_id: dict[str, bool] = {}
 
         for update in updates:
             task_id = update.get("task_id")
@@ -1490,6 +1495,7 @@ class UnifiedTickTickAPI:
             # Pre-fetch so we can send the full task representation. Without
             # this, fields not in the delta would be wiped server-side.
             existing = await self.get_task(task_id, project_id)
+            in_trash_by_id[task_id] = bool(existing.deleted)
 
             if "title" in update and update["title"] is not None:
                 existing.title = update["title"]
@@ -1533,6 +1539,11 @@ class UnifiedTickTickAPI:
 
         response = await self._v2_client.batch_tasks(update=v2_updates)  # type: ignore
         _check_batch_response_errors(response, "batch_update_tasks", [u["id"] for u in v2_updates])
+        # Attach the pre-edit trash state (derived, not part of TickTick's wire
+        # response) so the MCP tool can surface in_trash per task with no extra
+        # call. Underscore-prefixed like the other derived keys in this codebase.
+        if isinstance(response, dict):
+            response["_in_trash"] = in_trash_by_id
         return response
 
     async def batch_delete_tasks(

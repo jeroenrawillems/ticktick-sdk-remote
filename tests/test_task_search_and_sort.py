@@ -299,12 +299,17 @@ from ticktick_sdk.tools.formatting import (  # noqa: E402
 )
 
 
-def test_format_task_json_flags_trashed_only_when_trashed():
+def test_format_task_json_in_trash_detail_vs_list():
     trashed = Task(id="a" * 24, project_id=PROJ, title="binned", status=0, deleted=1)
     live = Task(id="b" * 24, project_id=PROJ, title="alive", status=0, deleted=0)
+    # Detail view (omit_defaults=False, the get_task path): always explicit
+    # true/false so a client can rely on the field being present.
     assert _fmt_json(trashed)["in_trash"] is True
-    # Not trashed -> key absent entirely (blank == not trashed).
-    assert "in_trash" not in _fmt_json(live)
+    assert _fmt_json(live)["in_trash"] is False
+    # Compact list/search view (omit_defaults=True): only when trashed, blank
+    # otherwise.
+    assert _fmt_json(trashed, omit_defaults=True)["in_trash"] is True
+    assert "in_trash" not in _fmt_json(live, omit_defaults=True)
 
 
 def test_trashed_task_still_reads_active_status():
@@ -357,6 +362,51 @@ async def test_active_list_never_flags_in_trash():
         _ctx(FakeClient([Task(id="b" * 24, project_id=PROJ, title="alive", status=0)])),
     )
     assert "in_trash" not in json.loads(out)["tasks"][0]
+
+
+class _UpdateFakeClient(FakeClient):
+    """FakeClient whose update_tasks echoes a pre-edit trash map like the real
+    batch_update_tasks does (via the `_in_trash` key)."""
+
+    def __init__(self, in_trash_by_id):
+        super().__init__(tasks=[], projects=[])
+        self._in_trash = in_trash_by_id
+
+    async def update_tasks(self, specs):
+        return {
+            "id2etag": {s["task_id"]: "etag" for s in specs},
+            "id2error": {},
+            "_in_trash": dict(self._in_trash),
+        }
+
+
+async def test_update_tasks_response_surfaces_per_task_in_trash():
+    tid = "a" * 24
+    from ticktick_sdk.tools.inputs import UpdateTasksInput
+    out = await server.ticktick_update_tasks(
+        UpdateTasksInput(
+            tasks=[{"task_id": tid, "project_id": PROJ, "title": "edited"}],
+            response_format="json",
+        ),
+        _ctx(_UpdateFakeClient({tid: True})),
+    )
+    d = json.loads(out)
+    assert d["tasks"] == [{"task_id": tid, "in_trash": True}]
+    # The internal derived key is stripped from the echoed raw response.
+    assert "_in_trash" not in d["response"]
+
+
+async def test_update_tasks_in_trash_false_for_live_task():
+    tid = "a" * 24
+    from ticktick_sdk.tools.inputs import UpdateTasksInput
+    out = await server.ticktick_update_tasks(
+        UpdateTasksInput(
+            tasks=[{"task_id": tid, "project_id": PROJ, "title": "edited"}],
+            response_format="json",
+        ),
+        _ctx(_UpdateFakeClient({tid: False})),
+    )
+    assert json.loads(out)["tasks"][0]["in_trash"] is False
 
 
 # =============================================================================

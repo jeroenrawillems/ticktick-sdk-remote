@@ -153,6 +153,41 @@ class TestBatchUpdatePreservesUnspecifiedFields:
         assert set(payload["tags"]) == {"work", "urgent"}
 
 
+class TestBatchUpdateReportsPreEditTrash:
+    """The update response carries the pre-edit trash state per task, captured
+    from the pre-fetch (no extra API call)."""
+
+    async def test_trashed_task_reported_in_trash_true(self):
+        existing = Task(
+            id="aaaaaaaaaaaaaaaaaaaaaaaa",
+            project_id="bbbbbbbbbbbbbbbbbbbbbbbb",
+            title="binned",
+            deleted=1,
+        )
+        api, _ = _make_api(existing)
+        resp = await api.batch_update_tasks([{
+            "task_id": existing.id,
+            "project_id": existing.project_id,
+            "title": "edited",
+        }])
+        assert resp["_in_trash"][existing.id] is True
+
+    async def test_live_task_reported_in_trash_false(self):
+        existing = Task(
+            id="aaaaaaaaaaaaaaaaaaaaaaaa",
+            project_id="bbbbbbbbbbbbbbbbbbbbbbbb",
+            title="alive",
+            deleted=0,
+        )
+        api, _ = _make_api(existing)
+        resp = await api.batch_update_tasks([{
+            "task_id": existing.id,
+            "project_id": existing.project_id,
+            "title": "edited",
+        }])
+        assert resp["_in_trash"][existing.id] is False
+
+
 class TestBatchUpdateAppliesDelta:
     """Fields in the delta should overwrite the existing values."""
 

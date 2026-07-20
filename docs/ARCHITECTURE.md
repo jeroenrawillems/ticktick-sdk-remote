@@ -1129,18 +1129,27 @@ still a `NOTE`), unlike the other `list_tasks` filters which are active-only.
 **Trash flag (`in_trash`).** TickTick soft-deletes: a trashed task keeps its
 `status` (usually `0`/"Active") and only flips a separate `deleted` (0/1) field,
 so without a signal a binned task is indistinguishable from a live one. The
-formatters surface `in_trash: true` (JSON) / an "In trash" detail line / a
-`[TRASH]` list-row flag **only when `task.deleted` is truthy** (blank == not
-trashed, per the "nothing unless true" rule). `get_task` relies on the `deleted`
-field coming back on `GET /task/{id}` (verified live 2026-07-20: `get_task`
-returns trashed tasks rather than 404ing, and they do **not** leak into the
-active list or `search_tasks`). The `list_tasks(status="deleted")` path
-additionally **forces** `task.deleted = 1` on every fetched row, because those
-came from the trash endpoint and are trashed by definition regardless of what
-that endpoint puts in the field. Note the latent footgun (not yet fixed):
-`update_tasks` on a trashed task "succeeds" and, because `to_v2_dict` omits
-`deleted`, likely **restores** it (un-trashes) — `in_trash` lets a caller notice
-before editing.
+The **detail** view (`get_task`, `omit_defaults=False`) always emits an explicit
+`in_trash` true/false so a caller can rely on the field; the **compact** views
+(list/search, `omit_defaults=True`) emit it only when trashed (blank == not
+trashed). Markdown shows an "In trash" detail line / a `[TRASH]` list-row flag,
+only when trashed. `get_task` relies on the `deleted` field coming back on the
+single-task endpoint (verified live 2026-07-20: `get_task` returns trashed tasks
+with `deleted=1` rather than 404ing, and they do **not** leak into the active
+list or `search_tasks`). The `list_tasks(status="deleted")` path additionally
+**forces** `task.deleted = 1` on every fetched row, because those came from the
+trash endpoint and are trashed by definition regardless of what that endpoint
+puts in the field.
+
+`update_tasks` reports trash state too: `batch_update_tasks` already pre-fetches
+each task, so it records the **pre-edit** `deleted` per id into `_in_trash` on the
+response (a derived key, underscore-prefixed like `_pagination_hint`), and the
+`ticktick_update_tasks` tool turns that into a per-task `in_trash` in its result
+with no extra API call. This matters because of a real footgun, intentionally
+**not** guarded (per the app consumer's request): `update_tasks` on a trashed
+task "succeeds" and, because `to_v2_dict` omits `deleted`, likely **restores** it
+(un-trashes). Updates on trashed tasks are kept working on purpose; `in_trash`
+just lets the caller notice.
 
 **Per-task content cap in list views.** Task notes can be huge, so JSON *list*
 views truncate `content` to `LIST_CONTENT_MAX_CHARS = 1000`, set

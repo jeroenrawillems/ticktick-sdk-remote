@@ -775,11 +775,11 @@ async def ticktick_get_task(params: TaskGetInput, ctx: Context) -> str:
         Task details including: id, project_id, title, content, kind, status,
         priority, dates, tags, parent_id, child_ids, and checklist items.
 
-        A task in the trash comes back with in_trash: true (markdown: an "In
-        trash" line). Trash is a SEPARATE axis from status, so a trashed task
-        still shows status "Active" — in_trash is the only signal it's binned,
-        and the field is omitted entirely when the task is not trashed. Editing
-        a trashed task still "succeeds", so check in_trash before updating.
+        The JSON response always carries an explicit in_trash (true/false) for
+        the task (markdown: an "In trash" line only when trashed). Trash is a
+        SEPARATE axis from status, so a trashed task still shows status "Active".
+        in_trash is the only signal it's binned. Editing a trashed task still
+        "succeeds" (and can restore it), so check in_trash before updating.
     """
     try:
         client = get_client(ctx)
@@ -1050,7 +1050,11 @@ async def ticktick_update_tasks(params: UpdateTasksInput, ctx: Context) -> str:
             - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
-        Summary of updated tasks or error message.
+        Summary of updated tasks or error message. The JSON response includes a
+        `tasks` array with `{task_id, in_trash}` per updated task. `in_trash`
+        reflects whether the task was in the trash at edit time (a trashed task
+        still updates successfully, and editing it can restore it), computed for
+        free from the update's own pre-fetch (no extra API call).
 
     Examples:
         Update priority:
@@ -1109,17 +1113,36 @@ async def ticktick_update_tasks(params: UpdateTasksInput, ctx: Context) -> str:
 
         response = await client.update_tasks(update_specs)
 
+        # Pre-edit trash state per task, captured during the update's own
+        # pre-fetch (no extra API call). A trashed task reads as status "Active"
+        # and its update still succeeds, so this flags "you just edited
+        # something in the bin" (and that edit may have restored it).
+        in_trash_map = response.pop("_in_trash", {}) if isinstance(response, dict) else {}
+        tasks_out = [
+            {"task_id": s["task_id"], "in_trash": bool(in_trash_map.get(s["task_id"], False))}
+            for s in update_specs
+        ]
+        trashed_ids = [t["task_id"] for t in tasks_out if t["in_trash"]]
+
         if params.response_format == ResponseFormat.MARKDOWN:
             count = len(update_specs)
             if count == 1:
-                return f"# Task Updated\n\nSuccessfully updated task `{update_specs[0]['task_id']}`"
+                body = f"# Task Updated\n\nSuccessfully updated task `{update_specs[0]['task_id']}`"
             else:
-                return f"# {count} Tasks Updated\n\nSuccessfully updated {count} tasks."
+                body = f"# {count} Tasks Updated\n\nSuccessfully updated {count} tasks."
+            if trashed_ids:
+                body += (
+                    f"\n\n⚠️ {len(trashed_ids)} of these were in the trash when edited "
+                    f"(editing a trashed task can restore it): "
+                    + ", ".join(f"`{tid}`" for tid in trashed_ids)
+                )
+            return body
         else:
             return json.dumps({
                 "success": True,
                 "count": len(update_specs),
-                "response": response
+                "tasks": tasks_out,
+                "response": response,
             }, separators=(",", ":"))
 
     except Exception as e:

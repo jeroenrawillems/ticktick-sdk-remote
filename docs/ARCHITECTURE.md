@@ -1126,6 +1126,22 @@ active tasks only; on `list_tasks` the `kind` filter runs **after** the
 per-status fetch, so it applies to every status (a completed or trashed `NOTE` is
 still a `NOTE`), unlike the other `list_tasks` filters which are active-only.
 
+**Trash flag (`in_trash`).** TickTick soft-deletes: a trashed task keeps its
+`status` (usually `0`/"Active") and only flips a separate `deleted` (0/1) field,
+so without a signal a binned task is indistinguishable from a live one. The
+formatters surface `in_trash: true` (JSON) / an "In trash" detail line / a
+`[TRASH]` list-row flag **only when `task.deleted` is truthy** (blank == not
+trashed, per the "nothing unless true" rule). `get_task` relies on the `deleted`
+field coming back on `GET /task/{id}` (verified live 2026-07-20: `get_task`
+returns trashed tasks rather than 404ing, and they do **not** leak into the
+active list or `search_tasks`). The `list_tasks(status="deleted")` path
+additionally **forces** `task.deleted = 1` on every fetched row, because those
+came from the trash endpoint and are trashed by definition regardless of what
+that endpoint puts in the field. Note the latent footgun (not yet fixed):
+`update_tasks` on a trashed task "succeeds" and, because `to_v2_dict` omits
+`deleted`, likely **restores** it (un-trashes) — `in_trash` lets a caller notice
+before editing.
+
 **Per-task content cap in list views.** Task notes can be huge, so JSON *list*
 views truncate `content` to `LIST_CONTENT_MAX_CHARS = 1000`, set
 `content_truncated: true` on affected tasks, and add a top-level `_content_hint`

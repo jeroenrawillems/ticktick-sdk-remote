@@ -345,6 +345,10 @@ def format_task_markdown(
             else:
                 lines.append(f"  - `{child_id}`")
     lines.append(f"- **Status**: {status_label(task.status)}")
+    # A trashed task keeps its old status (usually "Active"), so flag the trash
+    # explicitly. Shown only when trashed (blank == not trashed).
+    if getattr(task, "deleted", 0):
+        lines.append("- **In trash**: Yes (deleted, recoverable from TickTick trash)")
     lines.append(f"- **Priority**: {priority_label(task.priority)}")
 
     if task.progress is not None and task.progress > 0:
@@ -510,6 +514,13 @@ def format_task_json(
         ):
             if not payload.get(key):  # None / "" / 0 / False / []
                 payload.pop(key, None)
+
+    # Trash flag: only surface when the task is actually in the trash. Blank
+    # (key absent) means "not trashed", per the "nothing unless true" rule.
+    # `deleted` is a separate axis from `status`, so a trashed task otherwise
+    # reads as status_label "Active" — this is the only signal it's binned.
+    if getattr(task, "deleted", 0):
+        payload["in_trash"] = True
     return payload
 
 
@@ -528,6 +539,7 @@ def format_task_row_markdown(
     Without `child_meta`, the row shows only the plain `| N children` count.
     """
     priority_str = priority_indicator(task.priority)
+    trash_str = "[TRASH] " if getattr(task, "deleted", 0) else ""
     pinned_str = "[PINNED] " if task.is_pinned else ""
     # Only flag non-active statuses — [ACTIVE] on every row is noise.
     if task.status == -1:
@@ -573,7 +585,7 @@ def format_task_row_markdown(
         children_suffix = f" | {total_children} children"
 
     main_row = (
-        f"- {priority_str} {pinned_str}{status_flag}{repeat_flag_str}**{task_title}** "
+        f"- {priority_str} {trash_str}{pinned_str}{status_flag}{repeat_flag_str}**{task_title}** "
         f"(`{task.id}`){project_str}{due_str}{progress_str}{tags_str}{parent_str}{children_suffix}"
     )
     if child_lines:

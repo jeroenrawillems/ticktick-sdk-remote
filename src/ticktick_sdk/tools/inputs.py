@@ -497,7 +497,10 @@ class TaskListInput(BaseMCPInput):
             "- 'active': Current/pending tasks (default)\n"
             "- 'completed': Completed tasks (use days or from_date/to_date)\n"
             "- 'abandoned': Abandoned/won't-do tasks (use days or from_date/to_date)\n"
-            "- 'deleted': Trashed tasks"
+            "- 'deleted': Tasks in the trash/bin (deleted but recoverable). This "
+            "is the ONLY way to see trashed tasks — they never appear under "
+            "'active' or in ticktick_search_tasks. Trashed tasks come back with "
+            "in_trash: true."
         ),
     )
     # Existing filters

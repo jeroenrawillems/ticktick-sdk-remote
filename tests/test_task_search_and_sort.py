@@ -288,6 +288,78 @@ async def test_list_tasks_kind_scalar_coerced_to_list():
 
 
 # =============================================================================
+# in_trash — trashed tasks are flagged (the `deleted` axis is separate from
+# `status`, so a trashed task otherwise reads as "Active")
+# =============================================================================
+
+from ticktick_sdk.tools.formatting import (  # noqa: E402
+    format_task_json as _fmt_json,
+    format_task_markdown as _fmt_md,
+    format_task_row_markdown as _fmt_row,
+)
+
+
+def test_format_task_json_flags_trashed_only_when_trashed():
+    trashed = Task(id="a" * 24, project_id=PROJ, title="binned", status=0, deleted=1)
+    live = Task(id="b" * 24, project_id=PROJ, title="alive", status=0, deleted=0)
+    assert _fmt_json(trashed)["in_trash"] is True
+    # Not trashed -> key absent entirely (blank == not trashed).
+    assert "in_trash" not in _fmt_json(live)
+
+
+def test_trashed_task_still_reads_active_status():
+    # The whole point: a trashed task keeps status "Active"; in_trash is the
+    # only signal that it's binned.
+    trashed = Task(id="a" * 24, project_id=PROJ, title="binned", status=0, deleted=1)
+    payload = _fmt_json(trashed)
+    assert payload["status_label"] == "Active"
+    assert payload["in_trash"] is True
+
+
+def test_markdown_detail_and_row_flag_trash():
+    trashed = Task(id="a" * 24, project_id=PROJ, title="binned", status=0, deleted=1)
+    live = Task(id="b" * 24, project_id=PROJ, title="alive", status=0, deleted=0)
+    assert "In trash" in _fmt_md(trashed)
+    assert "[TRASH]" in _fmt_row(trashed)
+    assert "In trash" not in _fmt_md(live)
+    assert "[TRASH]" not in _fmt_row(live)
+
+
+class _TrashFakeClient(FakeClient):
+    """FakeClient that also serves a trash list (for status='deleted')."""
+
+    def __init__(self, deleted_tasks):
+        super().__init__(tasks=[], projects=[])
+        self._deleted = deleted_tasks
+
+    async def get_deleted_tasks(self, limit=100):
+        return list(self._deleted)
+
+
+async def test_list_tasks_deleted_forces_in_trash():
+    # The trash endpoint may hand back deleted=0; the tool must still flag these
+    # as in_trash because they came from the trash listing.
+    binned = [Task(id="a" * 24, project_id=PROJ, title="binned note", status=0, deleted=0)]
+    out = await server.ticktick_list_tasks(
+        TaskListInput(status="deleted", response_format="json"),
+        _ctx(_TrashFakeClient(binned)),
+    )
+    d = json.loads(out)
+    assert d["total"] == 1
+    assert d["tasks"][0]["in_trash"] is True
+
+
+async def test_active_list_never_flags_in_trash():
+    # Active tasks are never trashed (verified live: no leak), so in_trash is
+    # never set on the active listing.
+    out = await server.ticktick_list_tasks(
+        TaskListInput(status="active", response_format="json"),
+        _ctx(FakeClient([Task(id="b" * 24, project_id=PROJ, title="alive", status=0)])),
+    )
+    assert "in_trash" not in json.loads(out)["tasks"][0]
+
+
+# =============================================================================
 # Compact output + omit-defaults (search/list density)
 # =============================================================================
 

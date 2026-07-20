@@ -774,6 +774,12 @@ async def ticktick_get_task(params: TaskGetInput, ctx: Context) -> str:
     Returns:
         Task details including: id, project_id, title, content, kind, status,
         priority, dates, tags, parent_id, child_ids, and checklist items.
+
+        A task in the trash comes back with in_trash: true (markdown: an "In
+        trash" line). Trash is a SEPARATE axis from status, so a trashed task
+        still shows status "Active" — in_trash is the only signal it's binned,
+        and the field is omitted entirely when the task is not trashed. Editing
+        a trashed task still "succeeds", so check in_trash before updating.
     """
     try:
         client = get_client(ctx)
@@ -959,6 +965,11 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
 
         elif params.status == "deleted":
             tasks = await client.get_deleted_tasks(limit=params.limit)
+            # These came from the trash endpoint, so they ARE trashed. Force the
+            # flag so `in_trash` shows on every row even if the trash response
+            # itself omits `deleted` (the formatter keys off task.deleted).
+            for t in tasks:
+                t.deleted = 1
 
         else:
             tasks = await client.get_all_tasks()

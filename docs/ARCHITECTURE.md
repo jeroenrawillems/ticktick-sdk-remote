@@ -1144,15 +1144,15 @@ that endpoint puts in the field.
 each task, so it records the **pre-edit** `deleted` per id into `_in_trash` on the
 response (a derived key, underscore-prefixed like `_pagination_hint`), and the
 `ticktick_update_tasks` tool adds `in_trash: true` to any updated task that was
-binned, with no extra API call. Note on the "resurrection" question: it was
-speculated that updating a trashed task un-deletes it (because `to_v2_dict` omits
-`deleted` and V2 updates replace the task). **Live observation contradicts this**
-(2026-07-19: a trashed note updated repeatedly via `update_tasks` stayed in the
-trash, absent from search; and the original data-loss bug existed precisely
-because updates on a deleted note left it invisible). So updates on trashed tasks
-are kept working on purpose and appear to leave them trashed; the resurrection
-effect is **unconfirmed** and should be tested (update a trashed task, then check
-whether it reappears in the active list) before any code relies on it.
+binned, with no extra API call. On the "resurrection" question: it was speculated
+that updating a trashed task un-deletes it (because `to_v2_dict` omits `deleted`
+and V2 updates replace the task). **Tested and disproved (2026-07-20):** a
+throwaway task was created, trashed, then updated via `update_tasks`; the update
+applied (its content changed) but the task **stayed in the trash** (absent from
+search, still `in_trash: true`). So TickTick does *not* un-delete a task just
+because the update payload omits `deleted`, and the earlier "V2 resets omitted
+fields" reasoning does not extend to the trash flag. Updates on trashed tasks are
+kept working on purpose and leave them trashed.
 
 **Per-task content cap in list views.** Task notes can be huge, so JSON *list*
 views truncate `content` to `LIST_CONTENT_MAX_CHARS = 1000`, set

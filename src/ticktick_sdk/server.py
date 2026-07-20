@@ -779,8 +779,8 @@ async def ticktick_get_task(params: TaskGetInput, ctx: Context) -> str:
         line); the field is omitted when the task is not trashed. Trash is a
         SEPARATE axis from status, so a trashed task still shows status "Active",
         and in_trash: true is the only signal it's binned. Editing a trashed task
-        still "succeeds" and (per live observation) leaves it in the trash, so
-        check in_trash before updating if that matters to you.
+        still "succeeds" and leaves it in the trash (does NOT un-delete it,
+        tested 2026-07-20), so check in_trash before updating if that matters.
     """
     try:
         client = get_client(ctx)

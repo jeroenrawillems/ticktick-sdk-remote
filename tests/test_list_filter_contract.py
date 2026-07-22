@@ -13,7 +13,10 @@ future filter that claims to be status-agnostic should be added here.
 Also covers the fetch-window rules for the capped closed/trash endpoints:
 - the requested page must exist in the window (limit + offset),
 - an active post-filter widens the window to at least 500,
-- the window never exceeds 1000.
+- the window never exceeds 1000 (plus the +1 saturation probe),
+- one task is always probed past the window, so a saturated window keeps
+  next_offset non-null and paging converges on the true end instead of
+  presenting a truncated window as complete.
 """
 
 from __future__ import annotations
@@ -134,26 +137,28 @@ async def test_filters_combine(status):
 
 @pytest.mark.parametrize("status", FETCHED_STATUSES)
 async def test_plain_fetch_covers_requested_page(status):
-    # Page 2 must exist inside the fetched window: limit + offset. Fetching
-    # only `limit` used to make every page after the first come back empty.
+    # Page 2 must exist inside the fetched window: limit + offset (+1 probe).
+    # Fetching only `limit` used to make every page after the first come back
+    # empty.
     client = MatrixFakeClient(_matrix_tasks())
     await server.ticktick_list_tasks(
         TaskListInput(status=status, limit=50, offset=50, response_format="json"),
         _ctx(client),
     )
-    assert client.fetch_limits == [100]
+    assert client.fetch_limits == [101]
 
 
 @pytest.mark.parametrize("status", FETCHED_STATUSES)
 async def test_post_filter_widens_fetch_window(status):
     # With a filter active, fetching only `limit` tasks across all projects
-    # would let other projects' tasks crowd out the matches. Floor of 500.
+    # would let other projects' tasks crowd out the matches. Floor of 500
+    # (+1 probe).
     client = MatrixFakeClient(_matrix_tasks())
     await server.ticktick_list_tasks(
         TaskListInput(status=status, project_id=PROJ, limit=5, response_format="json"),
         _ctx(client),
     )
-    assert client.fetch_limits == [500]
+    assert client.fetch_limits == [501]
 
 
 async def test_fetch_window_capped_at_1000():
@@ -163,4 +168,54 @@ async def test_fetch_window_capped_at_1000():
                       response_format="json"),
         _ctx(client),
     )
-    assert client.fetch_limits == [1000]
+    assert client.fetch_limits == [1001]
+
+
+class SaturatingFakeClient(MatrixFakeClient):
+    """Honors the requested limit like real TickTick: returns at most `limit`
+    tasks, so a window smaller than the task set comes back saturated."""
+
+    async def get_completed_tasks(self, days=7, limit=100, from_date=None, to_date=None):
+        self.fetch_limits.append(limit)
+        return list(self._tasks)[:limit]
+
+
+def _many_tasks(n: int) -> list[Task]:
+    return [
+        Task(id=f"{i:024x}", project_id=PROJ, title=f"T{i}") for i in range(n)
+    ]
+
+
+async def test_saturated_window_keeps_next_offset_non_null():
+    # Live repro (2026-07-22): 150 tasks in range, limit=5 offset=140 fetched
+    # exactly 145 and reported total=145/next_offset=null, presenting the
+    # truncated window as complete. The +1 probe returns one extra task, so
+    # next_offset stays non-null and the pager knows to keep going.
+    client = SaturatingFakeClient(_many_tasks(150))
+    out = await server.ticktick_list_tasks(
+        TaskListInput(status="completed", limit=5, offset=140, response_format="json"),
+        _ctx(client),
+    )
+    d = json.loads(out)
+    assert d["count"] == 5
+    assert d["next_offset"] is not None  # pre-probe: null <-- the lie
+
+
+async def test_paging_a_saturated_window_converges_on_true_end():
+    # Walking next_offset grows the window each page and must terminate at
+    # the real total with every task seen exactly once.
+    client = SaturatingFakeClient(_many_tasks(150))
+    seen, offset, guard = [], 0, 0
+    while offset is not None and guard < 100:
+        out = await server.ticktick_list_tasks(
+            TaskListInput(status="completed", limit=50, offset=offset,
+                          response_format="json"),
+            _ctx(client),
+        )
+        d = json.loads(out)
+        seen.extend(t["id"] for t in d["tasks"])
+        offset = d["next_offset"]
+        guard += 1
+    assert len(seen) == 150
+    assert len(set(seen)) == 150
+    assert d["total"] == 150  # exact once the window outgrows the data

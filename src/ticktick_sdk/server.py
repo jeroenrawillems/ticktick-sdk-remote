@@ -909,6 +909,13 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
         if has_post_filter:
             fetch_limit = max(fetch_limit, 500)
         fetch_limit = min(fetch_limit, 1000)
+        # Probe one task past the window. If TickTick fills the whole probe,
+        # the window saturated and more tasks exist server-side; the extra
+        # task keeps next_offset non-null, so paging keeps walking (the
+        # window grows with offset) instead of presenting a truncated window
+        # as the complete result (verified live 2026-07-22: a saturated
+        # window reported total=145/next_offset=null when 150 existed).
+        fetch_limit += 1
 
         if params.status == "active":
             tasks = await client.get_all_tasks()

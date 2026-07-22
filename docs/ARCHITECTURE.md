@@ -1133,7 +1133,13 @@ closed/trash endpoints return a capped window and can't filter server-side,
 `ticktick_list_tasks` sizes the fetch window before filtering: at least
 `limit + offset` (so the requested page exists in the window), widened to a
 floor of 500 when any of those filters is active (so matches aren't crowded out
-by other projects' tasks), capped at 1000. `column_id` and the due-date filters
+by other projects' tasks), capped at 1000, plus **one probe task past the
+window**. The probe detects saturation: if TickTick fills the entire window,
+more tasks exist server-side, and the extra task keeps `next_offset` non-null
+so paging keeps walking (the window grows with `offset`) and converges on the
+true end instead of presenting a truncated window as complete (verified live
+2026-07-22: without the probe, a saturated window reported `total=145` and
+`next_offset=null` when 150 tasks existed). `column_id` and the due-date filters
 remain active-only by design and are documented as such in the tool schema. The
 cross-status contract is enforced by `tests/test_list_filter_contract.py`, a
 parametrized filter x status matrix; add any future status-agnostic filter

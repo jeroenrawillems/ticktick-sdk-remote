@@ -178,6 +178,7 @@ Summarized changes since [dev-mirzabicer/ticktick-sdk](https://github.com/dev-mi
 - [x] `has_due_date` filter — find scheduled or unscheduled tasks
 - [x] `kind` filter — accepts one kind or a list, e.g. `kind=["TEXT","CHECKLIST"]` to drop notes from a listing. Applies to every status
 - [x] `from_date`/`to_date` now honored for completed/abandoned status (previously silently ignored)
+- [x] `project_id`, `tag`, and `priority` filters now apply to **every** status, completed/abandoned/deleted included (previously silently ignored outside `status="active"`, so a per-project completed query returned all projects' tasks). When any of these filters is active, the tool over-fetches from TickTick (at least 500, capped at 1000) so matches aren't crowded out by other projects' tasks, and the fetch window always covers the requested page (`limit + offset`), fixing empty second pages on completed/abandoned/deleted listings. Contract enforced by a filter x status test matrix (`tests/test_list_filter_contract.py`)
 
 **Pagination & response sizing**
 - [x] Budget-aware pagination across **all** list-returning tools (`list_tasks`, `search_tasks`, `list_projects`, `list_folders`, `list_tags`, `list_columns`, `habits`) — pass `offset`, response surfaces `next_offset`
@@ -225,7 +226,7 @@ All mutation tools accept lists for batch operations (1-100 items).
 |------|-------------|
 | `ticktick_create_tasks` | Create 1-50 tasks with titles, dates, tags, etc. |
 | `ticktick_get_task` | Get task details by ID |
-| `ticktick_list_tasks` | List tasks (active/completed/abandoned/deleted via status filter; supports `due_before` / `due_after` for date-range filtering — combine both for a range; `kind` filter, one or a list; optional `sort`). **Paginated** — pass `offset` to continue; `total` is the true count. |
+| `ticktick_list_tasks` | List tasks (active/completed/abandoned/deleted via status filter; `project_id` / `tag` / `priority` / `kind` filters work on **every** status; `due_before` / `due_after` for date ranges, combine both for a range; optional `sort`). **Paginated**: pass `offset` to continue; `total` is the true count. |
 | `ticktick_update_tasks` | Update 1-100 tasks (includes column assignment) |
 | `ticktick_complete_tasks` | Complete 1-100 tasks |
 | `ticktick_delete_tasks` | Delete 1-100 tasks (moves to trash) |

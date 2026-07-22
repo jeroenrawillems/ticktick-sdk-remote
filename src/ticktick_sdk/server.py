@@ -833,10 +833,10 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
     Args:
         params: Filter parameters:
             - status (str): 'active' (default), 'completed', 'abandoned', 'deleted'
-            - project_id (str): Filter by project
+            - project_id (str): Filter by project (works with every status)
             - column_id (str): Filter by kanban column (active only, use with project_id)
-            - tag (str): Filter by tag name
-            - priority (str): Filter by priority level
+            - tag (str): Filter by tag name (works with every status)
+            - priority (str): Filter by priority level (works with every status)
             - kind (list or str): Only these task kinds - 'TEXT', 'NOTE', 'CHECKLIST'.
               Pass a list like ['TEXT','CHECKLIST'] to exclude notes. A single string
               also works. Applies to every status.
@@ -860,6 +860,8 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
         - Active tasks: status="active" (or just omit status)
         - Completed last 7 days: status="completed"
         - Completed in range: status="completed", from_date="2026-01-01", to_date="2026-01-15"
+        - Completed in one project: status="completed", from_date="2026-01-01",
+          to_date="2026-01-31", project_id="..."
         - Abandoned tasks: status="abandoned", days=30
         - Deleted tasks: status="deleted"
         - Active + project: status="active", project_id="..."
@@ -870,6 +872,11 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
         - Unscheduled tasks: status="active", has_due_date=False
         - Only tasks with a due date: status="active", has_due_date=True
         - Actionable tasks only (no notes): status="active", kind=["TEXT", "CHECKLIST"]
+
+    Filter note: for completed/abandoned/deleted, the project_id/tag/priority/
+    kind filters are applied to a window of up to 1000 recent tasks fetched
+    from TickTick, so an extremely large date range with thousands of closed
+    tasks may miss the oldest matches. Narrow the date range if that matters.
 
     Field defaults: fields at their default are omitted to save space. A field
     absent from a task is at its default: missing `content` = no notes; missing
@@ -887,6 +894,22 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
 
         # Handle different status types
         all_child_meta: dict[str, dict[str, Any]] | None = None
+
+        # The completed/abandoned/deleted endpoints return a capped window of
+        # recent tasks; the status-agnostic filters below and offset paging
+        # then slice that window further in memory. Size the window so the
+        # requested page actually exists (limit + offset) and so filtered
+        # matches aren't crowded out by tasks from other projects (floor of
+        # 500 when any filter is active). Capped at 1000 to stay polite to
+        # TickTick.
+        has_post_filter = bool(
+            params.project_id or params.tag or params.priority or params.kind
+        )
+        fetch_limit = params.limit + params.offset
+        if has_post_filter:
+            fetch_limit = max(fetch_limit, 500)
+        fetch_limit = min(fetch_limit, 1000)
+
         if params.status == "active":
             tasks = await client.get_all_tasks()
             # Capture {id: {title, priority}} from the FULL list before
@@ -899,21 +922,11 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
                 for t in tasks if t.id
             }
 
-            # Apply active-only filters
-            if params.project_id:
-                tasks = [t for t in tasks if t.project_id == params.project_id]
-
+            # Active-only filters. Kanban columns and due-date semantics only
+            # exist for live tasks; the status-agnostic filters (project, tag,
+            # priority, kind) run in the common section below instead.
             if params.column_id:
                 tasks = [t for t in tasks if t.column_id == params.column_id]
-
-            if params.tag:
-                tag_lower = params.tag.lower()
-                tasks = [t for t in tasks if any(tag.lower() == tag_lower for tag in t.tags)]
-
-            if params.priority:
-                priority_map = {"none": 0, "low": 1, "medium": 3, "high": 5}
-                target_priority = priority_map.get(params.priority, 0)
-                tasks = [t for t in tasks if t.priority == target_priority]
 
             if params.due_today:
                 today = datetime.now(ZoneInfo(USER_TIMEZONE)).date()
@@ -946,10 +959,10 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
                     hour=23, minute=59, second=59, tzinfo=tz,
                 )
                 tasks = await client.get_completed_tasks(
-                    limit=params.limit, from_date=from_dt, to_date=to_dt,
+                    limit=fetch_limit, from_date=from_dt, to_date=to_dt,
                 )
             else:
-                tasks = await client.get_completed_tasks(days=params.days, limit=params.limit)
+                tasks = await client.get_completed_tasks(days=params.days, limit=fetch_limit)
 
         elif params.status == "abandoned":
             if params.from_date and params.to_date:
@@ -959,13 +972,13 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
                     hour=23, minute=59, second=59, tzinfo=tz,
                 )
                 tasks = await client.get_abandoned_tasks(
-                    limit=params.limit, from_date=from_dt, to_date=to_dt,
+                    limit=fetch_limit, from_date=from_dt, to_date=to_dt,
                 )
             else:
-                tasks = await client.get_abandoned_tasks(days=params.days, limit=params.limit)
+                tasks = await client.get_abandoned_tasks(days=params.days, limit=fetch_limit)
 
         elif params.status == "deleted":
-            tasks = await client.get_deleted_tasks(limit=params.limit)
+            tasks = await client.get_deleted_tasks(limit=fetch_limit)
             # These came from the trash endpoint, so they ARE trashed. Force the
             # flag so `in_trash` shows on every row even if the trash response
             # itself omits `deleted` (the formatter keys off task.deleted).
@@ -975,8 +988,23 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
         else:
             tasks = await client.get_all_tasks()
 
-        # Kind filter applies across every status (a completed or trashed NOTE
-        # is still a NOTE), so it runs after the status-specific fetch.
+        # Status-agnostic filters run AFTER the status-specific fetch so they
+        # apply to every status (a completed or trashed task still has a
+        # project, tags, a priority, and a kind). The closed/trash endpoints
+        # can't filter server-side, so these filter the fetched window in
+        # memory (see fetch_limit above).
+        if params.project_id:
+            tasks = [t for t in tasks if t.project_id == params.project_id]
+
+        if params.tag:
+            tag_lower = params.tag.lower()
+            tasks = [t for t in tasks if any(tag.lower() == tag_lower for tag in t.tags)]
+
+        if params.priority:
+            priority_map = {"none": 0, "low": 1, "medium": 3, "high": 5}
+            target_priority = priority_map.get(params.priority, 0)
+            tasks = [t for t in tasks if t.priority == target_priority]
+
         if params.kind:
             kinds = set(params.kind)
             tasks = [t for t in tasks if (t.kind or "TEXT") in kinds]

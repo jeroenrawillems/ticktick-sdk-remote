@@ -506,7 +506,10 @@ class TaskListInput(BaseMCPInput):
     # Existing filters
     project_id: Optional[str] = Field(
         default=None,
-        description="Filter by project ID",
+        description=(
+            "Filter by project ID. Works with every status "
+            "(active/completed/abandoned/deleted)."
+        ),
         pattern=r"^(inbox\d+|[a-f0-9]{24})$",
     )
     column_id: Optional[str] = Field(
@@ -520,11 +523,14 @@ class TaskListInput(BaseMCPInput):
     )
     tag: Optional[str] = Field(
         default=None,
-        description="Filter by tag name",
+        description="Filter by tag name. Works with every status.",
     )
     priority: Optional[str] = Field(
         default=None,
-        description="Filter by priority: 'none', 'low', 'medium', 'high'",
+        description=(
+            "Filter by priority: 'none', 'low', 'medium', 'high'. "
+            "Works with every status."
+        ),
         pattern=r"^(none|low|medium|high)$",
     )
     kind: Optional[List[Literal["TEXT", "NOTE", "CHECKLIST"]]] = Field(
@@ -562,7 +568,7 @@ class TaskListInput(BaseMCPInput):
     # Date range (for completed/abandoned status)
     from_date: Optional[str] = Field(
         default=None,
-        description="Start date for completed/abandoned queries (YYYY-MM-DD), inclusive, treated as 00:00 in TICKTICK_TIMEZONE. Must be paired with to_date — providing only one is ignored. Overrides 'days' when both are set.",
+        description="Start date for completed/abandoned queries (YYYY-MM-DD), inclusive, treated as 00:00 in TICKTICK_TIMEZONE. Must be paired with to_date. Providing only one is ignored. Overrides 'days' when both are set.",
         pattern=r"^\d{4}-\d{2}-\d{2}$",
     )
     to_date: Optional[str] = Field(
@@ -601,7 +607,7 @@ class TaskListInput(BaseMCPInput):
     )
     offset: int = Field(
         default=0,
-        description="Zero-based offset into the filtered task list. The response includes 'next_offset' (or a footer in markdown) when more tasks remain — call again with that value to fetch the next page.",
+        description="Zero-based offset into the filtered task list. The response includes 'next_offset' (or a footer in markdown) when more tasks remain. Call again with that value to fetch the next page.",
         ge=0,
     )
     response_format: ResponseFormat = Field(

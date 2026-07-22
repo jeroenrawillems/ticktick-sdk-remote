@@ -1117,14 +1117,27 @@ the paginator with `offset` + `limit`.
 
 **`kind` filter (both tools).** `kind` is an **include-list**: pass one kind or
 several (`["TEXT","CHECKLIST"]`) and a task is kept when `(t.kind or "TEXT")` is
-in the set — so `["TEXT","CHECKLIST"]` is how you drop notes without an explicit
+in the set, so `["TEXT","CHECKLIST"]` is how you drop notes without an explicit
 "exclude" parameter. The input model (`tools/inputs.py`) types it as
 `Optional[List[Literal["TEXT","NOTE","CHECKLIST"]]]` with a `mode="before"`
 validator (`_coerce_kind_to_list`) that wraps a lone string into a one-element
 list, so `kind="NOTE"` and `kind=["NOTE"]` are equivalent. `search_tasks` filters
-active tasks only; on `list_tasks` the `kind` filter runs **after** the
-per-status fetch, so it applies to every status (a completed or trashed `NOTE` is
-still a `NOTE`), unlike the other `list_tasks` filters which are active-only.
+active tasks only.
+
+**Status-agnostic filters on `list_tasks` (fixed 2026-07-22).** `project_id`,
+`tag`, `priority`, and `kind` run **after** the per-status fetch, so they apply
+to every status (active/completed/abandoned/deleted). They used to live only in
+the active branch, which silently ignored them for the other statuses (a
+per-project completed query returned ALL projects' tasks). Because the
+closed/trash endpoints return a capped window and can't filter server-side,
+`ticktick_list_tasks` sizes the fetch window before filtering: at least
+`limit + offset` (so the requested page exists in the window), widened to a
+floor of 500 when any of those filters is active (so matches aren't crowded out
+by other projects' tasks), capped at 1000. `column_id` and the due-date filters
+remain active-only by design and are documented as such in the tool schema. The
+cross-status contract is enforced by `tests/test_list_filter_contract.py`, a
+parametrized filter x status matrix; add any future status-agnostic filter
+there.
 
 **Trash flag (`in_trash`).** TickTick soft-deletes: a trashed task keeps its
 `status` (usually `0`/"Active") and only flips a separate `deleted` (0/1) field,

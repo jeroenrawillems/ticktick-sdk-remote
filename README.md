@@ -3,16 +3,18 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A remote [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) server for [TickTick](https://ticktick.com), designed to run on [Railway](https://railway.app) so you can use it from **Claude.ai**, **Claude Mobile** (iOS/Android), and any MCP-compatible client — no local setup needed.
+A remote [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) server for [TickTick](https://ticktick.com), designed to run on [Railway](https://railway.app) so you can use it from **Claude.ai**, **Claude Mobile** (iOS/Android), and any MCP-compatible client, no local setup needed. Prefer not to host anything? It also runs **locally** over stdio for Claude Desktop and Claude Code: see [Run locally](#run-locally-instead-claude-desktop-stdio).
 
-Forked from [dev-mirzabicer/ticktick-sdk](https://github.com/dev-mirzabicer/ticktick-sdk). Includes full support for [Dida365 (滴答清单)](https://dida365.com).
+Forked from [dev-mirzabicer/ticktick-sdk](https://github.com/dev-mirzabicer/ticktick-sdk) (local-only, no commits since Jan 2026) and substantially extended. The short version: remote HTTP deployment with auth, filters and honest pagination on every task status, trash visibility, timezone-correct all-day dates, updates that no longer wipe fields, and graceful V1 fallback with clear diagnostics when TickTick blocks V2 login. Full list: [What this fork adds](#what-this-fork-adds). Includes full support for [Dida365 (滴答清单)](https://dida365.com).
 
 > **Developers:** for how the internals work — architecture, V1/V2 routing, data models, API quirks, response formatting/pagination, and using the Python SDK directly — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Table of Contents
 
 - [Quick Start (Deploy to Railway)](#quick-start-deploy-to-railway)
+- [Run locally (Claude Desktop, stdio)](#run-locally-instead-claude-desktop-stdio)
 - [Features](#features)
+- [What this fork adds](#what-this-fork-adds)
 - [Available MCP Tools (44 Total)](#available-mcp-tools-44-total)
 - [Example Conversations](#example-conversations)
 - [Health Check & Monitoring](#health-check--monitoring)
@@ -108,8 +110,6 @@ These are all the variables you'll set in Railway's dashboard. Required ones mus
 
 > **Changing `MCP_SECRET_PATH` later** changes the URL, and a connector's URL generally cannot be edited in place, so you will need to remove the connector and add it again.
 
-#### Claude Desktop / Claude Code (Local Alternative)
-
 ### Run locally instead (Claude Desktop, stdio)
 
 You can also run this server **on your own machine** over stdio, which Claude
@@ -137,6 +137,12 @@ throttled. (See "Debugging V2 auth" in `docs/ARCHITECTURE.md` §4.)
    Use the full path to `uv` if Claude Desktop can't find it on PATH, and double
    backslashes on Windows. Then fully quit and reopen Claude Desktop.
 
+5. For **Claude Code** instead of Claude Desktop, one command does the same:
+
+   ```bash
+   claude mcp add ticktick-local -- uv run --directory /full/path/to/this/repo ticktick-sdk stdio
+   ```
+
 The `ticktick-sdk stdio` subcommand (or `python -m ticktick_sdk` still serves
 HTTP for Railway) runs the same 44 tools over stdio; logs go to stderr so stdout
 stays clean for the protocol.
@@ -159,8 +165,9 @@ stays clean for the protocol.
 Summarized changes since [dev-mirzabicer/ticktick-sdk](https://github.com/dev-mirzabicer/ticktick-sdk). Most items are explained in more detail in the sections below.
 
 **Deployment & hosting**
-- [x] Remote HTTP server (streamable-http) for Railway deployment, replacing upstream's stdio-only local MCP
+- [x] Remote HTTP server (streamable-http) for Railway deployment. Upstream was local-stdio-only; local stdio still works here too ([Run locally](#run-locally-instead-claude-desktop-stdio))
 - [x] Bearer token authentication for the HTTP transport
+- [x] `MCP_SECRET_PATH` secret-URL middleware to protect a public deployment (Claude.ai usually cannot send auth headers), plus per-tool-call logging
 - [x] `/health` endpoint for platform monitoring
 - [x] Railway deployment files (Procfile, Dockerfile)
 
@@ -206,6 +213,8 @@ Summarized changes since [dev-mirzabicer/ticktick-sdk](https://github.com/dev-mi
 
 **Bug fixes**
 - [x] Timezone handling: all-day tasks no longer off by one day (uses `TICKTICK_TIMEZONE`)
+- [x] `pin_tasks` no longer wipes dates and other fields. The V2 endpoint replaces the whole task, so pin/unpin now re-sends the full task, the same way TickTick's own web client does
+- [x] Batch operations validate that target task and parent IDs exist instead of silently reporting success on wrong IDs
 - [x] `batch_update_tasks` no longer wipes `repeat_flag` / `is_all_day` / `time_zone` on sparse partial updates
 - [x] `batch_update_tasks` also preserves recurrence-anchor fields (`repeatFrom`, `repeatFirstDate`, `repeatTaskId`, `exDate`) — without these, TickTick keeps the RRULE but silently kills the chain (no next occurrence) when a recurring task's due date is moved
 - [x] V2 wire-format datetime conversion no longer drifts by +N hours when input has a non-UTC tzinfo
@@ -214,6 +223,7 @@ Summarized changes since [dev-mirzabicer/ticktick-sdk](https://github.com/dev-mi
 **Project conventions**
 - [x] `CLAUDE.md` with project instructions for Claude Code sessions
 - [x] `TODO.md` for cross-session task tracking
+- [x] Roughly 1,400 lines of upstream dead code removed (including an unused routing table), and the test suite grew from 309 to 472 test functions
 
 ---
 

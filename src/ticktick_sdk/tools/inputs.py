@@ -105,7 +105,9 @@ class TaskCreateItem(BaseModel):
     content: Optional[str] = Field(
         default=None,
         description="Task notes/content (supports markdown)",
-        max_length=10000,
+        # Provisional cap for probing TickTick's real ceiling (reported ~160k,
+        # unverified). Set the final value once the probe lands, see TODO.md.
+        max_length=200000,
     )
     description: Optional[str] = Field(
         default=None,
@@ -208,7 +210,9 @@ class TaskUpdateItem(BaseModel):
     content: Optional[str] = Field(
         default=None,
         description="New task content",
-        max_length=10000,
+        # Provisional cap for probing TickTick's real ceiling (reported ~160k,
+        # unverified). Set the final value once the probe lands, see TODO.md.
+        max_length=200000,
     )
     priority: Optional[str] = Field(
         default=None,

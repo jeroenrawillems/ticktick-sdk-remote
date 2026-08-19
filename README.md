@@ -189,7 +189,7 @@ Summarized changes since [dev-mirzabicer/ticktick-sdk](https://github.com/dev-mi
 
 **Task content & description**
 - [x] Checklist `description` is now readable and writable end to end: `ticktick_get_task` shows it (JSON `description` field, markdown "Description" section), list views include it capped like `content`, and `ticktick_update_tasks` accepts a `description` field. Previously it was create-only and no view ever displayed it, so anything written there was invisible through the tools
-- [x] `content` and `description` accept up to 60,000 chars. This cap is this server's own validation rule, not TickTick's; 60,000 is the operator's choice. Live probes (2026-08-19) verified the API stores at least ~87,000 chars of `content` (NOTE and TEXT kinds alike, no truncation) and roughly 20,000 chars of `description`. TickTick's true ceilings are above those floors and were not located. Note: the TickTick app hides `description` on content-bearing TEXT tasks even though it is stored
+- [x] `content` and `description` accept up to 60,000 chars. This cap is this server's own validation rule, chosen by the operator; TickTick's own limit is 164,130 chars, the same for task content, note content, and checklist descriptions (operator-tested in the app, 2026-08-19; API probes confirmed storage far beyond the old 10k/5k caps with no truncation). `description` is a checklist feature: the apps show it only on checklist-kind tasks, while on other kinds the API stores the field but nothing displays it
 
 **Pagination & response sizing**
 - [x] Budget-aware pagination across **all** list-returning tools (`list_tasks`, `search_tasks`, `list_projects`, `list_folders`, `list_tags`, `list_columns`, `habits`) — pass `offset`, response surfaces `next_offset`

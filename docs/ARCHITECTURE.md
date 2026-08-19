@@ -988,10 +988,11 @@ user-facing limits; mechanically they're `min_length`/`max_length` constraints o
 the list fields — creates cap lower than updates/deletes, consistent with the
 README's "1-50 / 1-100" guidance. Text-field caps: `content` and `description`
 accept up to 60,000 chars. These caps are this server's choice (operator
-decision 2026-08-19), not TickTick's. Live probes (2026-08-19) verified the
-API stores at least ~87,000 chars of content (NOTE and TEXT kinds) and
-roughly 20,000 chars of desc, with no truncation. TickTick's true ceilings
-are above those floors and were not located.
+decision 2026-08-19). TickTick's own limit is 164,130 chars, identical for
+task content, note content, and checklist descriptions (operator-tested in
+the app, 2026-08-19); API probes confirmed storage far past the old caps
+with no truncation. `desc` is a checklist feature: the apps display it only
+on checklist-kind tasks, while other kinds store it invisibly.
 
 ### Tool filtering
 

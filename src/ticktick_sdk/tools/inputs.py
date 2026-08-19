@@ -105,17 +105,15 @@ class TaskCreateItem(BaseModel):
     content: Optional[str] = Field(
         default=None,
         description="Task notes/content (supports markdown)",
-        # Operator-chosen cap, not TickTick's. The API path is live-verified
-        # to store at least ~87,000 chars (2026-08-19), so everything under
-        # this cap is inside verified territory.
+        # Operator-chosen cap. TickTick's own limit is 164,130 chars, the
+        # same for content and checklist descriptions (tested 2026-08-19).
         max_length=60000,
     )
     description: Optional[str] = Field(
         default=None,
         description="Checklist description",
-        # Operator-chosen cap, not TickTick's. Live probes (2026-08-19)
-        # verified desc storage to roughly 20,000 chars, so this cap extends
-        # past the verified floor. A TickTick rejection would propagate.
+        # Operator-chosen cap. TickTick's own limit is 164,130 chars, the
+        # same for content and checklist descriptions (tested 2026-08-19).
         max_length=60000,
     )
     priority: Optional[str] = Field(
@@ -214,17 +212,15 @@ class TaskUpdateItem(BaseModel):
     content: Optional[str] = Field(
         default=None,
         description="New task content",
-        # Operator-chosen cap, not TickTick's. The API path is live-verified
-        # to store at least ~87,000 chars (2026-08-19), so everything under
-        # this cap is inside verified territory.
+        # Operator-chosen cap. TickTick's own limit is 164,130 chars, the
+        # same for content and checklist descriptions (tested 2026-08-19).
         max_length=60000,
     )
     description: Optional[str] = Field(
         default=None,
         description="New checklist description",
-        # Operator-chosen cap, not TickTick's. Live probes (2026-08-19)
-        # verified desc storage to roughly 20,000 chars, so this cap extends
-        # past the verified floor. A TickTick rejection would propagate.
+        # Operator-chosen cap. TickTick's own limit is 164,130 chars, the
+        # same for content and checklist descriptions (tested 2026-08-19).
         max_length=60000,
     )
     priority: Optional[str] = Field(

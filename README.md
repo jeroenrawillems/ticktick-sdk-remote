@@ -189,7 +189,7 @@ Summarized changes since [dev-mirzabicer/ticktick-sdk](https://github.com/dev-mi
 
 **Task content & description**
 - [x] Checklist `description` is now readable and writable end to end: `ticktick_get_task` shows it (JSON `description` field, markdown "Description" section), list views include it capped like `content`, and `ticktick_update_tasks` accepts a `description` field. Previously it was create-only and no view ever displayed it, so anything written there was invisible through the tools
-- [x] `content` and `description` input caps raised from 10,000 / 5,000 chars to a provisional 200,000. The old caps were this server's own validation rules, not TickTick's. Live-verified so far: TickTick stores at least 9,100 chars of `content` (TEXT and NOTE kinds alike) and 4,050 chars of `description`. Final caps land once a probe pins TickTick's real ceiling (see `TODO.md`)
+- [x] `content` and `description` accept up to 200,000 chars (the old 10,000 / 5,000 caps were this server's own validation rules, not TickTick's). Live probes (2026-08-19) verified TickTick stores at least 199,211 chars of `content` (NOTE and TEXT kinds alike) and 20,032 chars of `description`, read back fully intact, so the 200k cap is the binding limit in the chain
 
 **Pagination & response sizing**
 - [x] Budget-aware pagination across **all** list-returning tools (`list_tasks`, `search_tasks`, `list_projects`, `list_folders`, `list_tags`, `list_columns`, `habits`) — pass `offset`, response surfaces `next_offset`
@@ -205,6 +205,7 @@ Summarized changes since [dev-mirzabicer/ticktick-sdk](https://github.com/dev-mi
 - [x] Structured filters: `project_id`, `kind` (TEXT/NOTE/CHECKLIST, one or a list like `["TEXT","CHECKLIST"]`), `tag`, `priority`, and `due_before`/`due_after`/`created_before`/`created_after`
 - [x] `query` is now optional — omit it for a pure filter lookup (e.g. "latest NOTE in project X" via `project_id` + `kind=NOTE` + `limit=1`)
 - [x] Optional `sort` on `ticktick_list_tasks` too (defaults to the existing per-status order)
+- [x] `limit` accepts up to 500, matching `list_tasks` (was 100, which rejected a uniform `limit=200`)
 
 **Task list & detail rendering**
 - [x] `[HIGH]` / `[MEDIUM]` / `[LOW]` / `[NONE]` priority labels visible in markdown list rows

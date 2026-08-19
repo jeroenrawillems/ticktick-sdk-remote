@@ -105,15 +105,16 @@ class TaskCreateItem(BaseModel):
     content: Optional[str] = Field(
         default=None,
         description="Task notes/content (supports markdown)",
-        # Provisional cap for probing TickTick's real ceiling (reported ~160k,
-        # unverified). Set the final value once the probe lands, see TODO.md.
+        # Our cap, not TickTick's. Live probes (2026-08-19) verified TickTick
+        # stores 199,211+ chars for NOTE and TEXT kinds, so this cap is the
+        # binding limit in the chain.
         max_length=200000,
     )
     description: Optional[str] = Field(
         default=None,
         description="Checklist description",
-        # Provisional cap for probing TickTick's real ceiling (unverified).
-        # Set the final value once the probe lands, see TODO.md.
+        # Our cap, not TickTick's. A live probe (2026-08-19) verified TickTick
+        # stores 20,032+ chars of desc.
         max_length=200000,
     )
     priority: Optional[str] = Field(
@@ -212,15 +213,16 @@ class TaskUpdateItem(BaseModel):
     content: Optional[str] = Field(
         default=None,
         description="New task content",
-        # Provisional cap for probing TickTick's real ceiling (reported ~160k,
-        # unverified). Set the final value once the probe lands, see TODO.md.
+        # Our cap, not TickTick's. Live probes (2026-08-19) verified TickTick
+        # stores 199,211+ chars for NOTE and TEXT kinds, so this cap is the
+        # binding limit in the chain.
         max_length=200000,
     )
     description: Optional[str] = Field(
         default=None,
         description="New checklist description",
-        # Provisional cap for probing TickTick's real ceiling (unverified).
-        # Set the final value once the probe lands, see TODO.md.
+        # Our cap, not TickTick's. A live probe (2026-08-19) verified TickTick
+        # stores 20,032+ chars of desc.
         max_length=200000,
     )
     priority: Optional[str] = Field(
@@ -716,7 +718,9 @@ class SearchInput(BaseMCPInput):
             "match count regardless of 'limit'."
         ),
         ge=1,
-        le=100,
+        # 500 matches list_tasks. It was 100, which rejected routines that
+        # pass a uniform limit=200 to both tools.
+        le=500,
     )
     offset: int = Field(
         default=0,

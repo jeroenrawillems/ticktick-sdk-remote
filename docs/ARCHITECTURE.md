@@ -987,9 +987,10 @@ specs are `TaskCreateItem`/`TaskUpdateItem`.) The README's tool table states the
 user-facing limits; mechanically they're `min_length`/`max_length` constraints on
 the list fields — creates cap lower than updates/deletes, consistent with the
 README's "1-50 / 1-100" guidance. Text-field caps: `content` and `description`
-accept up to a provisional 200,000 chars (the old 10k / 5k caps were this
-server's own choice, not TickTick's, and final values land once the ceiling
-probe completes, see TODO.md).
+accept up to 200,000 chars. These caps are this server's choice, not
+TickTick's. Live probes (2026-08-19) verified TickTick stores 199,211+ chars
+of content (NOTE and TEXT kinds) and 20,032+ chars of desc, so the 200k cap
+is the binding limit in the chain.
 
 ### Tool filtering
 

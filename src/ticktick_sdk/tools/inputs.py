@@ -105,17 +105,18 @@ class TaskCreateItem(BaseModel):
     content: Optional[str] = Field(
         default=None,
         description="Task notes/content (supports markdown)",
-        # Our cap, not TickTick's. Live probes (2026-08-19) verified TickTick
-        # stores 199,211+ chars for NOTE and TEXT kinds, so this cap is the
-        # binding limit in the chain.
-        max_length=200000,
+        # Operator-chosen cap, not TickTick's. The API path is live-verified
+        # to store at least ~87,000 chars (2026-08-19), so everything under
+        # this cap is inside verified territory.
+        max_length=60000,
     )
     description: Optional[str] = Field(
         default=None,
         description="Checklist description",
-        # Our cap, not TickTick's. A live probe (2026-08-19) verified TickTick
-        # stores 20,032+ chars of desc.
-        max_length=200000,
+        # Operator-chosen cap, not TickTick's. Live probes (2026-08-19)
+        # verified desc storage to roughly 20,000 chars, so this cap extends
+        # past the verified floor. A TickTick rejection would propagate.
+        max_length=60000,
     )
     priority: Optional[str] = Field(
         default=None,
@@ -213,17 +214,18 @@ class TaskUpdateItem(BaseModel):
     content: Optional[str] = Field(
         default=None,
         description="New task content",
-        # Our cap, not TickTick's. Live probes (2026-08-19) verified TickTick
-        # stores 199,211+ chars for NOTE and TEXT kinds, so this cap is the
-        # binding limit in the chain.
-        max_length=200000,
+        # Operator-chosen cap, not TickTick's. The API path is live-verified
+        # to store at least ~87,000 chars (2026-08-19), so everything under
+        # this cap is inside verified territory.
+        max_length=60000,
     )
     description: Optional[str] = Field(
         default=None,
         description="New checklist description",
-        # Our cap, not TickTick's. A live probe (2026-08-19) verified TickTick
-        # stores 20,032+ chars of desc.
-        max_length=200000,
+        # Operator-chosen cap, not TickTick's. Live probes (2026-08-19)
+        # verified desc storage to roughly 20,000 chars, so this cap extends
+        # past the verified floor. A TickTick rejection would propagate.
+        max_length=60000,
     )
     priority: Optional[str] = Field(
         default=None,

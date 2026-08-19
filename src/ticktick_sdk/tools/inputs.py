@@ -112,7 +112,9 @@ class TaskCreateItem(BaseModel):
     description: Optional[str] = Field(
         default=None,
         description="Checklist description",
-        max_length=5000,
+        # Provisional cap for probing TickTick's real ceiling (unverified).
+        # Set the final value once the probe lands, see TODO.md.
+        max_length=200000,
     )
     priority: Optional[str] = Field(
         default=None,
@@ -212,6 +214,13 @@ class TaskUpdateItem(BaseModel):
         description="New task content",
         # Provisional cap for probing TickTick's real ceiling (reported ~160k,
         # unverified). Set the final value once the probe lands, see TODO.md.
+        max_length=200000,
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="New checklist description",
+        # Provisional cap for probing TickTick's real ceiling (unverified).
+        # Set the final value once the probe lands, see TODO.md.
         max_length=200000,
     )
     priority: Optional[str] = Field(

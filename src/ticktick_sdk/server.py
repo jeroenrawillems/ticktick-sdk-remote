@@ -1073,6 +1073,7 @@ async def ticktick_update_tasks(params: UpdateTasksInput, ctx: Context) -> str:
               Optional update fields:
                 - title (str): New title
                 - content (str): New content/notes
+                - description (str): New checklist description (CHECKLIST kind)
                 - kind (str): Change task type - 'TEXT', 'NOTE', or 'CHECKLIST'
                 - priority (str): 'none', 'low', 'medium', 'high'
                 - start_date (str): Start date in ISO format
@@ -1126,6 +1127,8 @@ async def ticktick_update_tasks(params: UpdateTasksInput, ctx: Context) -> str:
                 spec["title"] = task_item.title
             if task_item.content is not None:
                 spec["content"] = task_item.content
+            if task_item.description is not None:
+                spec["description"] = task_item.description
             if task_item.priority is not None:
                 spec["priority"] = task_item.priority
             if task_item.start_date is not None:

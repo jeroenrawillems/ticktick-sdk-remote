@@ -1449,6 +1449,7 @@ class UnifiedTickTickAPI:
                 And any of these optional fields:
                 - title: New title
                 - content: New content
+                - description: New checklist description
                 - priority: New priority (0, 1, 3, 5 or 'none', 'low', 'medium', 'high')
                 - start_date: New start date (datetime or ISO string)
                 - due_date: New due date (datetime or ISO string)
@@ -1501,6 +1502,8 @@ class UnifiedTickTickAPI:
                 existing.title = update["title"]
             if "content" in update and update["content"] is not None:
                 existing.content = update["content"]
+            if "description" in update and update["description"] is not None:
+                existing.desc = update["description"]
             if "kind" in update and update["kind"] is not None:
                 existing.kind = update["kind"]
             if "priority" in update and update["priority"] is not None:

@@ -383,6 +383,11 @@ def format_task_markdown(
         lines.append("### Notes")
         lines.append(task.content)
 
+    if task.desc:
+        lines.append("")
+        lines.append("### Description")
+        lines.append(task.desc)
+
     if task.items:
         # task.items are checklist items (a TODO list *inside* the task),
         # not child tasks. Child tasks are tracked separately via child_ids
@@ -437,6 +442,19 @@ def format_task_json(
         content = content[:content_max_chars] + "…"
         content_truncated = True
 
+    # The checklist description gets the same list-view cap as content so a
+    # huge desc can't blow the response budget. Detail views pass None here
+    # and show it in full.
+    desc = task.desc
+    desc_truncated = False
+    if (
+        content_max_chars is not None
+        and desc is not None
+        and len(desc) > content_max_chars
+    ):
+        desc = desc[:content_max_chars] + "…"
+        desc_truncated = True
+
     # Children: when child_meta is provided (list/search/detail contexts),
     # render `{id, title, priority_label}`. Entries not in the map are dropped
     # (they're a different status than the current filter — e.g. completed
@@ -464,6 +482,7 @@ def format_task_json(
         "project_id": task.project_id,
         "title": task.title,
         "content": content,
+        "description": desc,
         "kind": task.kind,
         "status": task.status,
         "status_label": status_label(task.status),
@@ -500,6 +519,8 @@ def format_task_json(
         )
     if content_truncated:
         payload["content_truncated"] = True
+    if desc_truncated:
+        payload["description_truncated"] = True
 
     if omit_defaults:
         # Drop fields at their default value (absent == default). Keys not
@@ -508,7 +529,8 @@ def format_task_json(
         # hint keys (total_children/children_hidden/_children_hint/
         # content_truncated) which only appear when meaningful.
         for key in (
-            "content", "start_date", "due_date", "completed_time", "progress",
+            "content", "description", "start_date", "due_date",
+            "completed_time", "progress",
             "is_pinned", "is_all_day", "repeat_flag", "parent_id",
             "tags", "children", "items",
         ):
@@ -649,10 +671,12 @@ def format_tasks_json(
         "count": len(tasks),
         "tasks": formatted,
     }
-    if content_max_chars is not None and any(t.get("content_truncated") for t in formatted):
+    if content_max_chars is not None and any(
+        t.get("content_truncated") or t.get("description_truncated") for t in formatted
+    ):
         result["_content_hint"] = (
-            f"Some content fields are truncated to {content_max_chars} chars. "
-            "Use ticktick_get_task(task_id) for the full note."
+            f"Some content/description fields are truncated to {content_max_chars} chars. "
+            "Use ticktick_get_task(task_id) for the full text."
         )
     return result
 
@@ -729,10 +753,13 @@ def paginate_tasks_json(
         item_key="tasks",
         limit=limit,
     )
-    if any(t.get("content_truncated") for t in result["tasks"]):
+    if any(
+        t.get("content_truncated") or t.get("description_truncated")
+        for t in result["tasks"]
+    ):
         result["_content_hint"] = (
-            f"Some content fields are truncated to {content_max_chars} chars. "
-            "Use ticktick_get_task(task_id) for the full note."
+            f"Some content/description fields are truncated to {content_max_chars} chars. "
+            "Use ticktick_get_task(task_id) for the full text."
         )
     return result
 

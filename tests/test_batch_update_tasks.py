@@ -310,3 +310,47 @@ class TestFormatDatetimeTimezoneConversion:
     def test_negative_offset_converts_forward(self):
         dt = datetime(2026, 5, 13, 18, 0, 0, tzinfo=timezone(timedelta(hours=-4)))
         assert Task.format_datetime(dt, "v2") == "2026-05-13T22:00:00.000+0000"
+
+
+class TestBatchUpdateDescription:
+    """The checklist description (`desc`) can be set via update and is
+    preserved when other fields change (same pre-fetch + merge contract as
+    every other field)."""
+
+    async def test_description_update_is_sent(self):
+        existing = Task(
+            id="aaaaaaaaaaaaaaaaaaaaaaaa",
+            project_id="bbbbbbbbbbbbbbbbbbbbbbbb",
+            title="Groceries",
+            kind="CHECKLIST",
+        )
+        api, batch_mock = _make_api(existing)
+
+        await api.batch_update_tasks([{
+            "task_id": existing.id,
+            "project_id": existing.project_id,
+            "description": "What to buy this week",
+        }])
+
+        payload = _sent_payload(batch_mock)
+        assert payload["desc"] == "What to buy this week"
+
+    async def test_description_preserved_when_only_title_changes(self):
+        existing = Task(
+            id="aaaaaaaaaaaaaaaaaaaaaaaa",
+            project_id="bbbbbbbbbbbbbbbbbbbbbbbb",
+            title="Groceries",
+            kind="CHECKLIST",
+            desc="What to buy this week",
+        )
+        api, batch_mock = _make_api(existing)
+
+        await api.batch_update_tasks([{
+            "task_id": existing.id,
+            "project_id": existing.project_id,
+            "title": "Groceries (Tuesday)",
+        }])
+
+        payload = _sent_payload(batch_mock)
+        assert payload["desc"] == "What to buy this week"
+        assert payload["title"] == "Groceries (Tuesday)"

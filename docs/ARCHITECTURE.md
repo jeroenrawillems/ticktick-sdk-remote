@@ -988,9 +988,12 @@ user-facing limits; mechanically they're `min_length`/`max_length` constraints o
 the list fields — creates cap lower than updates/deletes, consistent with the
 README's "1-50 / 1-100" guidance. Text-field caps: `content` and `description`
 accept up to 200,000 chars. These caps are this server's choice, not
-TickTick's. Live probes (2026-08-19) verified TickTick stores 199,211+ chars
-of content (NOTE and TEXT kinds) and 20,032+ chars of desc, so the 200k cap
-is the binding limit in the chain.
+TickTick's. Live probes (2026-08-19) verified the API stores 199,211+ chars
+of content (NOTE and TEXT kinds) and 60,000 chars of desc, so the 200k cap
+is the binding limit on the API path. Caveat: the TickTick app's editor holds
+only ~70k chars and destroys the rest of a longer note when a user saves an
+in-app edit (verified live), so notes above ~70k are safe only as long as
+nobody hand-edits them in the app.
 
 ### Tool filtering
 

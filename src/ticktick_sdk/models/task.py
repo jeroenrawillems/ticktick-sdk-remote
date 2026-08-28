@@ -256,7 +256,7 @@ class Task(TickTickModel):
         # Recurrence anchors. The V2 batch/task endpoint resets any field
         # absent from the body, so we must round-trip these from the
         # pre-fetched task or TickTick can't compute the next occurrence
-        # (the RRULE survives but its anchor in the chain is lost — symptom:
+        # (the RRULE survives but its anchor in the chain is lost. Symptom:
         # moving a recurring task to a new due date silently kills the series).
         if self.repeat_from is not None:
             data["repeatFrom"] = self.repeat_from

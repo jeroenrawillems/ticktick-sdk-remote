@@ -511,7 +511,7 @@ class TaskListInput(BaseMCPInput):
             "- 'completed': Completed tasks (use days or from_date/to_date)\n"
             "- 'abandoned': Abandoned/won't-do tasks (use days or from_date/to_date)\n"
             "- 'deleted': Tasks in the trash/bin (deleted but recoverable). This "
-            "is the ONLY way to see trashed tasks — they never appear under "
+            "is the ONLY way to see trashed tasks. They never appear under "
             "'active' or in ticktick_search_tasks. Trashed tasks come back with "
             "in_trash: true."
         ),
@@ -651,7 +651,7 @@ class SearchInput(BaseMCPInput):
         default=None,
         description=(
             "Text to match against task titles and content (case-insensitive "
-            "substring). Optional — omit to filter without a text query."
+            "substring). Optional, omit to filter without a text query."
         ),
         max_length=200,
     )
@@ -711,7 +711,7 @@ class SearchInput(BaseMCPInput):
         description=(
             "Maximum tasks per page. The response also respects a hard size "
             "budget, so a page may contain fewer than 'limit'; when more match, "
-            "'next_offset' is set (or a markdown footer is shown) — call again "
+            "'next_offset' is set (or a markdown footer is shown), call again "
             "with it to fetch the next page. 'total' always reports the true "
             "match count regardless of 'limit'."
         ),

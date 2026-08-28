@@ -234,7 +234,7 @@ def paginate_json(
         }
         if next_off is not None:
             env["_pagination_hint"] = (
-                f"More {item_key} available — call this tool again with "
+                f"More {item_key} available, call this tool again with "
                 f"offset={next_off} to fetch the next page "
                 f"(showing {len(items_list)} of {total})."
             )
@@ -382,7 +382,7 @@ def format_task_markdown(
         lines.append("- **All-day**: Yes")
     if task.repeat_flag:
         lines.append(f"- **Repeats**: `{task.repeat_flag}`")
-    # Only surface time_zone when it differs from the user's configured TZ —
+    # Only surface time_zone when it differs from the user's configured TZ,
     # otherwise it's noise on every task.
     if task.time_zone and task.time_zone != tz_name:
         lines.append(f"- **Time zone**: {task.time_zone}")
@@ -426,7 +426,7 @@ def format_task_json(
     `content_max_chars` is the per-task content cap used in list views to
     keep page sizes manageable. When set and the content is longer, it's
     truncated with an ellipsis and an extra `content_truncated: true` field
-    is added — the model should call `ticktick_get_task` for the full text.
+    is added. The model should call `ticktick_get_task` for the full text.
     Detail-view callers leave this at None to get the full content.
 
     `omit_defaults` (list/search views) drops fields that are at their default
@@ -470,7 +470,7 @@ def format_task_json(
 
     # Children: when child_meta is provided (list/search/detail contexts),
     # render `{id, title, priority_label}`. Entries not in the map are dropped
-    # (they're a different status than the current filter — e.g. completed
+    # (they're a different status than the current filter, e.g. completed
     # subtasks under an active-filtered parent). When child_meta is None,
     # children are listed as bare `{id}` entries.
     total_children = len(task.child_ids or [])
@@ -569,7 +569,7 @@ def format_task_row_markdown(
     r"""Format a single task as one markdown list row.
 
     When `child_meta` is provided and the task has children, the row is
-    followed by indented sub-bullets — one per resolvable child showing
+    followed by indented sub-bullets, one per resolvable child showing
     `[PRIORITY] title (\`id\`)`. Children not in the map (different status
     than the active filter) are counted as hidden in the row suffix.
     Without `child_meta`, the row shows only the plain `| N children` count.
@@ -577,7 +577,7 @@ def format_task_row_markdown(
     priority_str = priority_indicator(task.priority)
     trash_str = "[TRASH] " if getattr(task, "deleted", 0) else ""
     pinned_str = "[PINNED] " if task.is_pinned else ""
-    # Only flag non-active statuses — [ACTIVE] on every row is noise.
+    # Only flag non-active statuses. [ACTIVE] on every row is noise.
     if task.status == -1:
         status_flag = "[ABANDONED] "
     elif task.status in (1, 2):
@@ -651,7 +651,7 @@ def format_tasks_markdown(
 
 
 def _build_child_meta(tasks: list[Task]) -> dict[str, dict[str, Any]]:
-    """Build a `{id: {title, priority}}` map from a task list — used to
+    """Build a `{id: {title, priority}}` map from a task list, used to
     enrich child references when no explicit map was passed."""
     return {t.id: {"title": t.title, "priority": t.priority} for t in tasks if t.id}
 
@@ -1163,7 +1163,7 @@ def _completion_window(stats: UserStatistics) -> dict[str, Any] | None:
     """Summarize the per-day completion window TickTick returns in task_by_day.
 
     Returns None when there's no daily history. The date keys are whatever
-    TickTick sends — we don't control the window (the /statistics/general
+    TickTick sends. We don't control the window (the /statistics/general
     endpoint takes no date params), we just summarize what's present.
     """
     if not stats.task_by_day:

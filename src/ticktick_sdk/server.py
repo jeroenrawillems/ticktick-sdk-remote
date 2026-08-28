@@ -305,8 +305,8 @@ def _id_sort_key(task) -> tuple:
 
 # A single shared TickTick client per process. With streamable-http, the MCP
 # SDK runs the server lifespan once *per session*, not once per process, so
-# building the client in the lifespan would re-authenticate on every connection
-# — the bug that turned a flaky login into a rate-limit ban. We build it once,
+# building the client in the lifespan would re-authenticate on every connection,
+# the bug that turned a flaky login into a rate-limit ban. We build it once,
 # behind a lock, and reuse it across all sessions.
 _shared_client: TickTickClient | None = None
 _shared_client_lock = asyncio.Lock()
@@ -320,7 +320,7 @@ async def _get_or_create_client() -> TickTickClient:
             return _shared_client
 
         settings = get_settings()
-        # Startup warnings — logged once, on the single build (not per session).
+        # Startup warnings, logged once, on the single build (not per session).
         # TickTick expects a 24-char lowercase-hex ObjectId; a malformed value
         # can make V2 sign-on fail with misleading errors.
         if not settings.device_id_looks_valid:
@@ -400,7 +400,7 @@ async def build_project_name_map(
     """Return {project_id: name} for the formatter when tasks span >1 project.
 
     Returns None when all tasks share a project (the per-row Project badge would
-    be redundant noise) or the list is empty. One extra API call per render —
+    be redundant noise) or the list is empty. One extra API call per render.
     `format_tasks_markdown` will use this to add a `| Project: <name>` suffix.
     """
     distinct = {t.project_id for t in tasks if t.project_id}
@@ -417,7 +417,7 @@ async def build_child_meta_for_task(
     formatter can show title + priority for every subtask.
 
     Returns None when the task has no children. Failed fetches are skipped
-    silently — the formatter will fall back to bare IDs for those.
+    silently, the formatter will fall back to bare IDs for those.
     """
     if not task.child_ids:
         return None
@@ -786,7 +786,7 @@ async def ticktick_get_task(params: TaskGetInput, ctx: Context) -> str:
         client = get_client(ctx)
         task = await client.get_task(params.task_id, params.project_id)
 
-        # Fetch child meta and project name concurrently — the children
+        # Fetch child meta and project name concurrently, the children
         # call is N parallel get_tasks; both are independent of each other.
         child_meta, project_names = await asyncio.gather(
             build_child_meta_for_task(client, task),
@@ -1470,7 +1470,7 @@ async def ticktick_search_tasks(params: SearchInput, ctx: Context) -> str:
     Results default to newest-first (created_desc). The text query is optional:
     omit it for a pure filter lookup (e.g. the latest NOTE in a project).
 
-    Scope: active tasks only (not completed/abandoned/trashed) — use
+    Scope: active tasks only (not completed/abandoned/trashed), use
     ticktick_list_tasks with a status filter for those.
 
     Args:
@@ -2531,7 +2531,7 @@ async def ticktick_get_status(ctx: Context, response_format: ResponseFormat = Re
 
 
 def _mask_secret(value: str | None) -> str:
-    """Mask a sensitive-ish value for safe display — never the full thing."""
+    """Mask a sensitive-ish value for safe display, never the full thing."""
     if not value:
         return "(not set)"
     if len(value) <= 8:
@@ -2553,7 +2553,7 @@ def _build_auth_verdict(
     """One-line, plain-English summary + next step for the current state."""
     parts: list[str] = []
     if v1_ok and v2_ok:
-        parts.append(f"All good — V1 and V2 both authenticated (V2 via {v2_auth_method}).")
+        parts.append(f"All good. V1 and V2 both authenticated (V2 via {v2_auth_method}).")
     elif v1_ok and not v2_ok:
         detail = v2_error or v2_reason or "no specific error was recorded"
         detail_l = detail.lower()
@@ -2598,24 +2598,24 @@ def _build_auth_verdict(
         )
     elif v2_ok and not v1_ok:
         parts.append(
-            "DEGRADED (V2-only): V1 (OAuth) is down — refresh TICKTICK_ACCESS_TOKEN "
+            "DEGRADED (V2-only): V1 (OAuth) is down. Refresh TICKTICK_ACCESS_TOKEN "
             "via `ticktick-sdk auth` and redeploy. get_project_with_data won't work "
             "until then."
         )
     else:
         parts.append(
-            "BOTH V1 and V2 are failing right now — check credentials in the hosting "
+            "BOTH V1 and V2 are failing right now. Check credentials in the hosting "
             "env (Railway) and redeploy."
         )
 
     if not device_id_valid:
         parts.append(
             "Also: TICKTICK_DEVICE_ID is not a valid 24-char hex value, which can "
-            "break the password login — set it to a valid hex id."
+            "break the password login. Set it to a valid hex id."
         )
     elif device_id_ephemeral:
         parts.append(
-            "Also: TICKTICK_DEVICE_ID isn't set (auto-generated per deploy) — set a "
+            "Also: TICKTICK_DEVICE_ID isn't set (auto-generated per deploy). Set a "
             "stable 24-char hex id to look like one consistent device."
         )
     return " ".join(parts)
@@ -2636,11 +2636,11 @@ async def ticktick_auth_status(ctx: Context, response_format: ResponseFormat = R
     Diagnose TickTick authentication health (live check) without exposing secrets.
 
     Performs lightweight read pings to test whether the V1 (OAuth) and V2
-    (session) connections are valid RIGHT NOW — so it catches a token or cookie
+    (session) connections are valid RIGHT NOW, so it catches a token or cookie
     that expired after the server started. Use this when TickTick tools start
     failing with auth errors, to understand what's wrong and how to fix it.
 
-    The result NEVER contains credential values (password, cookies, tokens) —
+    The result NEVER contains credential values (password, cookies, tokens),
     only booleans, a masked device id, and a plain-English verdict that the
     person hosting the server can act on.
 
@@ -2738,12 +2738,12 @@ async def ticktick_get_statistics(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
 ) -> str:
     """
-    Get productivity statistics (all from one `/statistics/general` call — no task fetching).
+    Get productivity statistics (all from one `/statistics/general` call, no task fetching).
 
     Use `section` to focus the output:
     - `all` (default): score/level, the task-completion overview + per-day/week/month
       breakdown (total, daily average, completion rate), and a pomodoro summary.
-    - `completions`: task completions only — today/yesterday/all-time plus the per-day,
+    - `completions`: task completions only, today/yesterday/all-time plus the per-day,
       per-week and per-month breakdown with total, average and completion rate.
     - `score`: score, level, and the per-day score history.
     - `pomodoros`: focus/pomodoro counts, durations, daily goal, and per-day/week/month history.

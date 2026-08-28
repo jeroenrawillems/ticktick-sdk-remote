@@ -1200,13 +1200,19 @@ failed child fetch degrades to a bare id.
 **Task list row format (markdown).** Each row renders, omitting empty fields:
 
 ```
-- [PRIORITY] [PINNED] [DONE|ABANDONED] [REPEATS] **Title** (`id`) | Project: Name | Due: YYYY-MM-DD | Tags: a, b | Child of: `parent_id` | N children
+- [PRIORITY] [PINNED] [DONE|ABANDONED] [RRULE] **Title** (`id`) | Project: Name | Due: YYYY-MM-DD | Tags: a, b | Child of: `parent_id` | N children
 ```
 
 `[PRIORITY]` is `[HIGH]`/`[MEDIUM]`/`[LOW]`/`[NONE]`; `[PINNED]`/`[DONE]`/
 `[ABANDONED]` appear only when applicable (active is the implicit default).
-Recurrence flags `[DAILY]`/`[WEEKLY]`/`[MONTHLY]`/`[YEARLY]` are parsed from the
-RRULE's `FREQ=`, falling back to `[REPEATS]` for anything unrecognized.
+The recurrence flag is the task's rule shown verbatim, minus the `RRULE:`
+prefix and any `WKST=` part (which only names the first day of the week and
+never moves an occurrence): `RRULE:FREQ=DAILY;INTERVAL=8;WKST=MO` renders as
+`[FREQ=DAILY;INTERVAL=8]`. Showing the whole rule keeps cadences apart that a
+frequency-only label collapsed, since every-day and every-8-days both read as
+`[DAILY]`. Non-RRULE forms are shown in full, and a rule that is empty once
+cleaned falls back to `[REPEATS]`. JSON views are unaffected, they already
+return the raw `repeat_flag`.
 `Project: Name` is shown only when the rendered list spans more than one project.
 
 > Note: the old `format_batch_*` helper functions were removed — batch tool

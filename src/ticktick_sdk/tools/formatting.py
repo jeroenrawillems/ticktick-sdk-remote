@@ -8,7 +8,6 @@ in both Markdown and JSON formats.
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
@@ -66,25 +65,39 @@ def status_label(status: int) -> str:
     return labels.get(status, "Unknown")
 
 
-_KNOWN_RRULE_FREQS = {"DAILY", "WEEKLY", "MONTHLY", "YEARLY", "HOURLY", "MINUTELY"}
+# Dropped from the displayed rule. WKST only names which weekday a week starts
+# on, so it never changes which dates the rule produces.
+_RRULE_NOISE_PARAMS = {"WKST"}
+_RRULE_PREFIX = "RRULE:"
 
 
 def repeat_flag_indicator(repeat_flag: str | None) -> str:
     """Compact list-row label for a task's recurrence rule.
 
-    Parses FREQ= out of an iCalendar RRULE (e.g. ``RRULE:FREQ=WEEKLY;BYDAY=MO``)
-    and returns ``[WEEKLY] `` so the cadence is visible at a glance. Falls back
-    to ``[REPEATS] `` when the rule is set but FREQ is missing or unknown.
+    Shows the rule itself rather than only its frequency, so cadences that
+    differ stay distinguishable in a list row: ``RRULE:FREQ=DAILY`` and
+    ``RRULE:FREQ=DAILY;INTERVAL=8`` both used to read ``[DAILY]``.
+
+    The ``RRULE:`` prefix and any ``WKST=`` part are dropped as noise, and the
+    rest is kept verbatim, so ``RRULE:FREQ=DAILY;INTERVAL=8;WKST=MO`` becomes
+    ``[FREQ=DAILY;INTERVAL=8] ``. Non-RRULE rules (TickTick also emits forms
+    such as ``ERULE:NAME=...``) are shown in full. A rule that is empty once
+    cleaned falls back to ``[REPEATS] ``.
     """
-    if not repeat_flag:
+    rule = (repeat_flag or "").strip()
+    if not rule:
         return ""
-    match = re.search(r"FREQ=(\w+)", repeat_flag, re.IGNORECASE)
-    if not match:
+    if rule.upper().startswith(_RRULE_PREFIX):
+        rule = rule[len(_RRULE_PREFIX):]
+    parts = [
+        part.strip()
+        for part in rule.split(";")
+        if part.strip()
+        and part.split("=", 1)[0].strip().upper() not in _RRULE_NOISE_PARAMS
+    ]
+    if not parts:
         return "[REPEATS] "
-    freq = match.group(1).upper()
-    if freq in _KNOWN_RRULE_FREQS:
-        return f"[{freq}] "
-    return "[REPEATS] "
+    return f"[{';'.join(parts)}] "
 
 
 # =============================================================================
@@ -681,10 +694,11 @@ def format_tasks_json(
     return result
 
 
-# Per-task content cap for list views (~a short paragraph); the model can
+# Per-task content cap for list views (~a short paragraph). The model can
 # call ticktick_get_task to retrieve the full notes when needed. Raising this
-# shows more content per task but fits fewer tasks per page (the 25k-char
-# response budget is fixed), so list pages get shorter for content-heavy tasks.
+# shows more content per task but fits fewer tasks per page, because the
+# response budget (CHARACTER_LIMIT, 40,000 chars) is fixed, so list pages get
+# shorter for content-heavy tasks.
 LIST_CONTENT_MAX_CHARS = 1000
 
 

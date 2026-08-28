@@ -209,7 +209,7 @@ Summarized changes since [dev-mirzabicer/ticktick-sdk](https://github.com/dev-mi
 
 **Task list & detail rendering**
 - [x] `[HIGH]` / `[MEDIUM]` / `[LOW]` / `[NONE]` priority labels visible in markdown list rows
-- [x] `[PINNED]` / `[DONE]` / `[ABANDONED]` / `[DAILY|WEEKLY|MONTHLY|YEARLY|REPEATS]` status flags in list rows
+- [x] `[PINNED]` / `[DONE]` / `[ABANDONED]` status flags in list rows, plus the full recurrence rule (`[FREQ=DAILY;INTERVAL=8]`) so cadences that differ never look alike
 - [x] Parent/children relationships shown inline (`Child of: <id>`, `N children`)
 - [x] Project name (not just ID) shown in multi-project list views and in detail view
 - [x] Recurrence rule, all-day flag, and non-default time zone surfaced in detail view

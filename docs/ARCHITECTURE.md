@@ -986,7 +986,13 @@ descriptions):
 specs are `TaskCreateItem`/`TaskUpdateItem`.) The README's tool table states the
 user-facing limits; mechanically they're `min_length`/`max_length` constraints on
 the list fields — creates cap lower than updates/deletes, consistent with the
-README's "1-50 / 1-100" guidance.
+README's "1-50 / 1-100" guidance. Text-field caps: `content` and `description`
+accept up to 60,000 chars. These caps are this server's choice (operator
+decision 2026-08-19). TickTick's own limit is 164,130 chars, identical for
+task content, note content, and checklist descriptions (operator-tested in
+the app, 2026-08-19); API probes confirmed storage far past the old caps
+with no truncation. `desc` is a checklist feature: the apps display it only
+on checklist-kind tasks, while other kinds store it invisibly.
 
 ### Tool filtering
 
@@ -1117,21 +1123,69 @@ the paginator with `offset` + `limit`.
 
 **`kind` filter (both tools).** `kind` is an **include-list**: pass one kind or
 several (`["TEXT","CHECKLIST"]`) and a task is kept when `(t.kind or "TEXT")` is
-in the set — so `["TEXT","CHECKLIST"]` is how you drop notes without an explicit
+in the set, so `["TEXT","CHECKLIST"]` is how you drop notes without an explicit
 "exclude" parameter. The input model (`tools/inputs.py`) types it as
 `Optional[List[Literal["TEXT","NOTE","CHECKLIST"]]]` with a `mode="before"`
 validator (`_coerce_kind_to_list`) that wraps a lone string into a one-element
 list, so `kind="NOTE"` and `kind=["NOTE"]` are equivalent. `search_tasks` filters
-active tasks only; on `list_tasks` the `kind` filter runs **after** the
-per-status fetch, so it applies to every status (a completed or trashed `NOTE` is
-still a `NOTE`), unlike the other `list_tasks` filters which are active-only.
+active tasks only.
+
+**Status-agnostic filters on `list_tasks` (fixed 2026-07-22).** `project_id`,
+`tag`, `priority`, and `kind` run **after** the per-status fetch, so they apply
+to every status (active/completed/abandoned/deleted). They used to live only in
+the active branch, which silently ignored them for the other statuses (a
+per-project completed query returned ALL projects' tasks). Because the
+closed/trash endpoints return a capped window and can't filter server-side,
+`ticktick_list_tasks` sizes the fetch window before filtering: at least
+`limit + offset` (so the requested page exists in the window), widened to a
+floor of 500 when any of those filters is active (so matches aren't crowded out
+by other projects' tasks), capped at 1000, plus **one probe task past the
+window**. The probe detects saturation: if TickTick fills the entire window,
+more tasks exist server-side, and the extra task keeps `next_offset` non-null
+so paging keeps walking (the window grows with `offset`) and converges on the
+true end instead of presenting a truncated window as complete (verified live
+2026-07-22: without the probe, a saturated window reported `total=145` and
+`next_offset=null` when 150 tasks existed). `column_id` and the due-date filters
+remain active-only by design and are documented as such in the tool schema. The
+cross-status contract is enforced by `tests/test_list_filter_contract.py`, a
+parametrized filter x status matrix; add any future status-agnostic filter
+there.
+
+**Trash flag (`in_trash`).** TickTick soft-deletes: a trashed task keeps its
+`status` (usually `0`/"Active") and only flips a separate `deleted` (0/1) field,
+so without a signal a binned task is indistinguishable from a live one. The
+formatters emit `in_trash: true` **only when a task is trashed** (JSON key
+present, markdown "In trash" detail line / `[TRASH]` list-row flag); the field is
+omitted otherwise, uniformly across detail and list views, so nothing ever
+carries an `in_trash: false`. `get_task` relies on the `deleted` field coming
+back on the single-task endpoint (verified live 2026-07-20: `get_task` returns
+trashed tasks with `deleted=1` rather than 404ing, and they do **not** leak into
+the active list or `search_tasks`). The `list_tasks(status="deleted")` path
+additionally **forces** `task.deleted = 1` on every fetched row, because those
+came from the trash endpoint and are trashed by definition regardless of what
+that endpoint puts in the field.
+
+`update_tasks` reports trash state too: `batch_update_tasks` already pre-fetches
+each task, so it records the **pre-edit** `deleted` per id into `_in_trash` on the
+response (a derived key, underscore-prefixed like `_pagination_hint`), and the
+`ticktick_update_tasks` tool adds `in_trash: true` to any updated task that was
+binned, with no extra API call. On the "resurrection" question: it was speculated
+that updating a trashed task un-deletes it (because `to_v2_dict` omits `deleted`
+and V2 updates replace the task). **Tested and disproved (2026-07-20):** a
+throwaway task was created, trashed, then updated via `update_tasks`; the update
+applied (its content changed) but the task **stayed in the trash** (absent from
+search, still `in_trash: true`). So TickTick does *not* un-delete a task just
+because the update payload omits `deleted`, and the earlier "V2 resets omitted
+fields" reasoning does not extend to the trash flag. Updates on trashed tasks are
+kept working on purpose and leave them trashed.
 
 **Per-task content cap in list views.** Task notes can be huge, so JSON *list*
 views truncate `content` to `LIST_CONTENT_MAX_CHARS = 1000`, set
 `content_truncated: true` on affected tasks, and add a top-level `_content_hint`
-pointing at `ticktick_get_task`. The **detail** view (`get_task`) never
+pointing at `ticktick_get_task`. The checklist `description` gets the same cap
+(flag: `description_truncated`). The **detail** view (`get_task`) never
 truncates. (Raising the cap trades fewer tasks per page against the fixed
-response budget — content-heavy lists just paginate sooner.)
+response budget, content-heavy lists just paginate sooner.)
 
 **Subtask enrichment.** List views build a `{child_id: {title, priority}}` meta
 map from the same fetch, so children render with title + priority and **no extra
@@ -1146,13 +1200,19 @@ failed child fetch degrades to a bare id.
 **Task list row format (markdown).** Each row renders, omitting empty fields:
 
 ```
-- [PRIORITY] [PINNED] [DONE|ABANDONED] [REPEATS] **Title** (`id`) | Project: Name | Due: YYYY-MM-DD | Tags: a, b | Child of: `parent_id` | N children
+- [PRIORITY] [PINNED] [DONE|ABANDONED] [RRULE] **Title** (`id`) | Project: Name | Due: YYYY-MM-DD | Tags: a, b | Child of: `parent_id` | N children
 ```
 
 `[PRIORITY]` is `[HIGH]`/`[MEDIUM]`/`[LOW]`/`[NONE]`; `[PINNED]`/`[DONE]`/
 `[ABANDONED]` appear only when applicable (active is the implicit default).
-Recurrence flags `[DAILY]`/`[WEEKLY]`/`[MONTHLY]`/`[YEARLY]` are parsed from the
-RRULE's `FREQ=`, falling back to `[REPEATS]` for anything unrecognized.
+The recurrence flag is the task's rule shown verbatim, minus the `RRULE:`
+prefix and any `WKST=` part (which only names the first day of the week and
+never moves an occurrence): `RRULE:FREQ=DAILY;INTERVAL=8;WKST=MO` renders as
+`[FREQ=DAILY;INTERVAL=8]`. Showing the whole rule keeps cadences apart that a
+frequency-only label collapsed, since every-day and every-8-days both read as
+`[DAILY]`. Non-RRULE forms are shown in full, and a rule that is empty once
+cleaned falls back to `[REPEATS]`. JSON views are unaffected, they already
+return the raw `repeat_flag`.
 `Project: Name` is shown only when the rendered list spans more than one project.
 
 > Note: the old `format_batch_*` helper functions were removed — batch tool

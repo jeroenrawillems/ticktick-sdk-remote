@@ -305,8 +305,8 @@ def _id_sort_key(task) -> tuple:
 
 # A single shared TickTick client per process. With streamable-http, the MCP
 # SDK runs the server lifespan once *per session*, not once per process, so
-# building the client in the lifespan would re-authenticate on every connection
-# — the bug that turned a flaky login into a rate-limit ban. We build it once,
+# building the client in the lifespan would re-authenticate on every connection,
+# the bug that turned a flaky login into a rate-limit ban. We build it once,
 # behind a lock, and reuse it across all sessions.
 _shared_client: TickTickClient | None = None
 _shared_client_lock = asyncio.Lock()
@@ -320,7 +320,7 @@ async def _get_or_create_client() -> TickTickClient:
             return _shared_client
 
         settings = get_settings()
-        # Startup warnings — logged once, on the single build (not per session).
+        # Startup warnings, logged once, on the single build (not per session).
         # TickTick expects a 24-char lowercase-hex ObjectId; a malformed value
         # can make V2 sign-on fail with misleading errors.
         if not settings.device_id_looks_valid:
@@ -400,7 +400,7 @@ async def build_project_name_map(
     """Return {project_id: name} for the formatter when tasks span >1 project.
 
     Returns None when all tasks share a project (the per-row Project badge would
-    be redundant noise) or the list is empty. One extra API call per render —
+    be redundant noise) or the list is empty. One extra API call per render.
     `format_tasks_markdown` will use this to add a `| Project: <name>` suffix.
     """
     distinct = {t.project_id for t in tasks if t.project_id}
@@ -417,7 +417,7 @@ async def build_child_meta_for_task(
     formatter can show title + priority for every subtask.
 
     Returns None when the task has no children. Failed fetches are skipped
-    silently — the formatter will fall back to bare IDs for those.
+    silently, the formatter will fall back to bare IDs for those.
     """
     if not task.child_ids:
         return None
@@ -774,12 +774,19 @@ async def ticktick_get_task(params: TaskGetInput, ctx: Context) -> str:
     Returns:
         Task details including: id, project_id, title, content, kind, status,
         priority, dates, tags, parent_id, child_ids, and checklist items.
+
+        A trashed task comes back with in_trash: true (markdown: an "In trash"
+        line); the field is omitted when the task is not trashed. Trash is a
+        SEPARATE axis from status, so a trashed task still shows status "Active",
+        and in_trash: true is the only signal it's binned. Editing a trashed task
+        still "succeeds" and leaves it in the trash (does NOT un-delete it,
+        tested 2026-07-20), so check in_trash before updating if that matters.
     """
     try:
         client = get_client(ctx)
         task = await client.get_task(params.task_id, params.project_id)
 
-        # Fetch child meta and project name concurrently — the children
+        # Fetch child meta and project name concurrently, the children
         # call is N parallel get_tasks; both are independent of each other.
         child_meta, project_names = await asyncio.gather(
             build_child_meta_for_task(client, task),
@@ -826,10 +833,10 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
     Args:
         params: Filter parameters:
             - status (str): 'active' (default), 'completed', 'abandoned', 'deleted'
-            - project_id (str): Filter by project
+            - project_id (str): Filter by project (works with every status)
             - column_id (str): Filter by kanban column (active only, use with project_id)
-            - tag (str): Filter by tag name
-            - priority (str): Filter by priority level
+            - tag (str): Filter by tag name (works with every status)
+            - priority (str): Filter by priority level (works with every status)
             - kind (list or str): Only these task kinds - 'TEXT', 'NOTE', 'CHECKLIST'.
               Pass a list like ['TEXT','CHECKLIST'] to exclude notes. A single string
               also works. Applies to every status.
@@ -853,6 +860,8 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
         - Active tasks: status="active" (or just omit status)
         - Completed last 7 days: status="completed"
         - Completed in range: status="completed", from_date="2026-01-01", to_date="2026-01-15"
+        - Completed in one project: status="completed", from_date="2026-01-01",
+          to_date="2026-01-31", project_id="..."
         - Abandoned tasks: status="abandoned", days=30
         - Deleted tasks: status="deleted"
         - Active + project: status="active", project_id="..."
@@ -863,6 +872,11 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
         - Unscheduled tasks: status="active", has_due_date=False
         - Only tasks with a due date: status="active", has_due_date=True
         - Actionable tasks only (no notes): status="active", kind=["TEXT", "CHECKLIST"]
+
+    Filter note: for completed/abandoned/deleted, the project_id/tag/priority/
+    kind filters are applied to a window of up to 1000 recent tasks fetched
+    from TickTick, so an extremely large date range with thousands of closed
+    tasks may miss the oldest matches. Narrow the date range if that matters.
 
     Field defaults: fields at their default are omitted to save space. A field
     absent from a task is at its default: missing `content` = no notes; missing
@@ -880,6 +894,29 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
 
         # Handle different status types
         all_child_meta: dict[str, dict[str, Any]] | None = None
+
+        # The completed/abandoned/deleted endpoints return a capped window of
+        # recent tasks; the status-agnostic filters below and offset paging
+        # then slice that window further in memory. Size the window so the
+        # requested page actually exists (limit + offset) and so filtered
+        # matches aren't crowded out by tasks from other projects (floor of
+        # 500 when any filter is active). Capped at 1000 to stay polite to
+        # TickTick.
+        has_post_filter = bool(
+            params.project_id or params.tag or params.priority or params.kind
+        )
+        fetch_limit = params.limit + params.offset
+        if has_post_filter:
+            fetch_limit = max(fetch_limit, 500)
+        fetch_limit = min(fetch_limit, 1000)
+        # Probe one task past the window. If TickTick fills the whole probe,
+        # the window saturated and more tasks exist server-side; the extra
+        # task keeps next_offset non-null, so paging keeps walking (the
+        # window grows with offset) instead of presenting a truncated window
+        # as the complete result (verified live 2026-07-22: a saturated
+        # window reported total=145/next_offset=null when 150 existed).
+        fetch_limit += 1
+
         if params.status == "active":
             tasks = await client.get_all_tasks()
             # Capture {id: {title, priority}} from the FULL list before
@@ -892,21 +929,11 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
                 for t in tasks if t.id
             }
 
-            # Apply active-only filters
-            if params.project_id:
-                tasks = [t for t in tasks if t.project_id == params.project_id]
-
+            # Active-only filters. Kanban columns and due-date semantics only
+            # exist for live tasks; the status-agnostic filters (project, tag,
+            # priority, kind) run in the common section below instead.
             if params.column_id:
                 tasks = [t for t in tasks if t.column_id == params.column_id]
-
-            if params.tag:
-                tag_lower = params.tag.lower()
-                tasks = [t for t in tasks if any(tag.lower() == tag_lower for tag in t.tags)]
-
-            if params.priority:
-                priority_map = {"none": 0, "low": 1, "medium": 3, "high": 5}
-                target_priority = priority_map.get(params.priority, 0)
-                tasks = [t for t in tasks if t.priority == target_priority]
 
             if params.due_today:
                 today = datetime.now(ZoneInfo(USER_TIMEZONE)).date()
@@ -939,10 +966,10 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
                     hour=23, minute=59, second=59, tzinfo=tz,
                 )
                 tasks = await client.get_completed_tasks(
-                    limit=params.limit, from_date=from_dt, to_date=to_dt,
+                    limit=fetch_limit, from_date=from_dt, to_date=to_dt,
                 )
             else:
-                tasks = await client.get_completed_tasks(days=params.days, limit=params.limit)
+                tasks = await client.get_completed_tasks(days=params.days, limit=fetch_limit)
 
         elif params.status == "abandoned":
             if params.from_date and params.to_date:
@@ -952,19 +979,39 @@ async def ticktick_list_tasks(params: TaskListInput, ctx: Context) -> str:
                     hour=23, minute=59, second=59, tzinfo=tz,
                 )
                 tasks = await client.get_abandoned_tasks(
-                    limit=params.limit, from_date=from_dt, to_date=to_dt,
+                    limit=fetch_limit, from_date=from_dt, to_date=to_dt,
                 )
             else:
-                tasks = await client.get_abandoned_tasks(days=params.days, limit=params.limit)
+                tasks = await client.get_abandoned_tasks(days=params.days, limit=fetch_limit)
 
         elif params.status == "deleted":
-            tasks = await client.get_deleted_tasks(limit=params.limit)
+            tasks = await client.get_deleted_tasks(limit=fetch_limit)
+            # These came from the trash endpoint, so they ARE trashed. Force the
+            # flag so `in_trash` shows on every row even if the trash response
+            # itself omits `deleted` (the formatter keys off task.deleted).
+            for t in tasks:
+                t.deleted = 1
 
         else:
             tasks = await client.get_all_tasks()
 
-        # Kind filter applies across every status (a completed or trashed NOTE
-        # is still a NOTE), so it runs after the status-specific fetch.
+        # Status-agnostic filters run AFTER the status-specific fetch so they
+        # apply to every status (a completed or trashed task still has a
+        # project, tags, a priority, and a kind). The closed/trash endpoints
+        # can't filter server-side, so these filter the fetched window in
+        # memory (see fetch_limit above).
+        if params.project_id:
+            tasks = [t for t in tasks if t.project_id == params.project_id]
+
+        if params.tag:
+            tag_lower = params.tag.lower()
+            tasks = [t for t in tasks if any(tag.lower() == tag_lower for tag in t.tags)]
+
+        if params.priority:
+            priority_map = {"none": 0, "low": 1, "medium": 3, "high": 5}
+            target_priority = priority_map.get(params.priority, 0)
+            tasks = [t for t in tasks if t.priority == target_priority]
+
         if params.kind:
             kinds = set(params.kind)
             tasks = [t for t in tasks if (t.kind or "TEXT") in kinds]
@@ -1026,6 +1073,7 @@ async def ticktick_update_tasks(params: UpdateTasksInput, ctx: Context) -> str:
               Optional update fields:
                 - title (str): New title
                 - content (str): New content/notes
+                - description (str): New checklist description (CHECKLIST kind)
                 - kind (str): Change task type - 'TEXT', 'NOTE', or 'CHECKLIST'
                 - priority (str): 'none', 'low', 'medium', 'high'
                 - start_date (str): Start date in ISO format
@@ -1039,7 +1087,11 @@ async def ticktick_update_tasks(params: UpdateTasksInput, ctx: Context) -> str:
             - response_format (str): 'markdown' (default) or 'json'
 
     Returns:
-        Summary of updated tasks or error message.
+        Summary of updated tasks or error message. The JSON response includes a
+        `tasks` array of `{task_id}` per updated task, plus `in_trash: true` on
+        any task that was in the trash at edit time (omitted otherwise). A
+        trashed task still updates successfully. This pre-edit trash state is
+        computed for free from the update's own pre-fetch (no extra API call).
 
     Examples:
         Update priority:
@@ -1075,6 +1127,8 @@ async def ticktick_update_tasks(params: UpdateTasksInput, ctx: Context) -> str:
                 spec["title"] = task_item.title
             if task_item.content is not None:
                 spec["content"] = task_item.content
+            if task_item.description is not None:
+                spec["description"] = task_item.description
             if task_item.priority is not None:
                 spec["priority"] = task_item.priority
             if task_item.start_date is not None:
@@ -1098,17 +1152,38 @@ async def ticktick_update_tasks(params: UpdateTasksInput, ctx: Context) -> str:
 
         response = await client.update_tasks(update_specs)
 
+        # Pre-edit trash state per task, captured during the update's own
+        # pre-fetch (no extra API call). A trashed task reads as status "Active"
+        # and its update still succeeds, so this flags "you just edited
+        # something that was in the bin". Emit in_trash ONLY when true (blank ==
+        # not trashed, no clutter).
+        in_trash_map = response.pop("_in_trash", {}) if isinstance(response, dict) else {}
+        tasks_out = []
+        for s in update_specs:
+            entry: dict[str, Any] = {"task_id": s["task_id"]}
+            if in_trash_map.get(s["task_id"]):
+                entry["in_trash"] = True
+            tasks_out.append(entry)
+        trashed_ids = [s["task_id"] for s in update_specs if in_trash_map.get(s["task_id"])]
+
         if params.response_format == ResponseFormat.MARKDOWN:
             count = len(update_specs)
             if count == 1:
-                return f"# Task Updated\n\nSuccessfully updated task `{update_specs[0]['task_id']}`"
+                body = f"# Task Updated\n\nSuccessfully updated task `{update_specs[0]['task_id']}`"
             else:
-                return f"# {count} Tasks Updated\n\nSuccessfully updated {count} tasks."
+                body = f"# {count} Tasks Updated\n\nSuccessfully updated {count} tasks."
+            if trashed_ids:
+                body += (
+                    f"\n\n⚠️ {len(trashed_ids)} of these were in the trash when edited: "
+                    + ", ".join(f"`{tid}`" for tid in trashed_ids)
+                )
+            return body
         else:
             return json.dumps({
                 "success": True,
                 "count": len(update_specs),
-                "response": response
+                "tasks": tasks_out,
+                "response": response,
             }, separators=(",", ":"))
 
     except Exception as e:
@@ -1395,7 +1470,7 @@ async def ticktick_search_tasks(params: SearchInput, ctx: Context) -> str:
     Results default to newest-first (created_desc). The text query is optional:
     omit it for a pure filter lookup (e.g. the latest NOTE in a project).
 
-    Scope: active tasks only (not completed/abandoned/trashed) — use
+    Scope: active tasks only (not completed/abandoned/trashed), use
     ticktick_list_tasks with a status filter for those.
 
     Args:
@@ -2456,7 +2531,7 @@ async def ticktick_get_status(ctx: Context, response_format: ResponseFormat = Re
 
 
 def _mask_secret(value: str | None) -> str:
-    """Mask a sensitive-ish value for safe display — never the full thing."""
+    """Mask a sensitive-ish value for safe display, never the full thing."""
     if not value:
         return "(not set)"
     if len(value) <= 8:
@@ -2478,7 +2553,7 @@ def _build_auth_verdict(
     """One-line, plain-English summary + next step for the current state."""
     parts: list[str] = []
     if v1_ok and v2_ok:
-        parts.append(f"All good — V1 and V2 both authenticated (V2 via {v2_auth_method}).")
+        parts.append(f"All good. V1 and V2 both authenticated (V2 via {v2_auth_method}).")
     elif v1_ok and not v2_ok:
         detail = v2_error or v2_reason or "no specific error was recorded"
         detail_l = detail.lower()
@@ -2523,24 +2598,24 @@ def _build_auth_verdict(
         )
     elif v2_ok and not v1_ok:
         parts.append(
-            "DEGRADED (V2-only): V1 (OAuth) is down — refresh TICKTICK_ACCESS_TOKEN "
+            "DEGRADED (V2-only): V1 (OAuth) is down. Refresh TICKTICK_ACCESS_TOKEN "
             "via `ticktick-sdk auth` and redeploy. get_project_with_data won't work "
             "until then."
         )
     else:
         parts.append(
-            "BOTH V1 and V2 are failing right now — check credentials in the hosting "
+            "BOTH V1 and V2 are failing right now. Check credentials in the hosting "
             "env (Railway) and redeploy."
         )
 
     if not device_id_valid:
         parts.append(
             "Also: TICKTICK_DEVICE_ID is not a valid 24-char hex value, which can "
-            "break the password login — set it to a valid hex id."
+            "break the password login. Set it to a valid hex id."
         )
     elif device_id_ephemeral:
         parts.append(
-            "Also: TICKTICK_DEVICE_ID isn't set (auto-generated per deploy) — set a "
+            "Also: TICKTICK_DEVICE_ID isn't set (auto-generated per deploy). Set a "
             "stable 24-char hex id to look like one consistent device."
         )
     return " ".join(parts)
@@ -2561,11 +2636,11 @@ async def ticktick_auth_status(ctx: Context, response_format: ResponseFormat = R
     Diagnose TickTick authentication health (live check) without exposing secrets.
 
     Performs lightweight read pings to test whether the V1 (OAuth) and V2
-    (session) connections are valid RIGHT NOW — so it catches a token or cookie
+    (session) connections are valid RIGHT NOW, so it catches a token or cookie
     that expired after the server started. Use this when TickTick tools start
     failing with auth errors, to understand what's wrong and how to fix it.
 
-    The result NEVER contains credential values (password, cookies, tokens) —
+    The result NEVER contains credential values (password, cookies, tokens),
     only booleans, a masked device id, and a plain-English verdict that the
     person hosting the server can act on.
 
@@ -2663,12 +2738,12 @@ async def ticktick_get_statistics(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
 ) -> str:
     """
-    Get productivity statistics (all from one `/statistics/general` call — no task fetching).
+    Get productivity statistics (all from one `/statistics/general` call, no task fetching).
 
     Use `section` to focus the output:
     - `all` (default): score/level, the task-completion overview + per-day/week/month
       breakdown (total, daily average, completion rate), and a pomodoro summary.
-    - `completions`: task completions only — today/yesterday/all-time plus the per-day,
+    - `completions`: task completions only, today/yesterday/all-time plus the per-day,
       per-week and per-month breakdown with total, average and completion rate.
     - `score`: score, level, and the per-day score history.
     - `pomodoros`: focus/pomodoro counts, durations, daily goal, and per-day/week/month history.

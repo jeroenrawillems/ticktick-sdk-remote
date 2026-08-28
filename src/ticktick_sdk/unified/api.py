@@ -346,7 +346,7 @@ class UnifiedTickTickAPI:
         ``TickTickAPIUnavailableError`` from the existing per-method guards.
 
         Only raises ``TickTickConfigurationError`` if *neither* API is usable
-        — which is the only state where the server genuinely cannot do
+        which is the only state where the server genuinely cannot do
         anything.
         """
         if self._initialized:
@@ -397,7 +397,7 @@ class UnifiedTickTickAPI:
 
         if not verification.get("v1") and self._v1_client is not None and self._v1_client.is_authenticated:
             # The V1 client had a token but verify_clients() reported it
-            # unhealthy — almost always means the OAuth access token has
+            # unhealthy, almost always means the OAuth access token has
             # expired or been revoked.
             logger.error(
                 "V1 OAuth verification failed. Your TICKTICK_ACCESS_TOKEN is "
@@ -545,7 +545,7 @@ class UnifiedTickTickAPI:
         if not token:
             logger.error(
                 "TICKTICK_V2_COOKIES is set but contains no `t=` cookie, and "
-                "TICKTICK_V2_TOKEN is unset — cannot build a V2 session. Make "
+                "TICKTICK_V2_TOKEN is unset, cannot build a V2 session. Make "
                 "sure you pasted the FULL Cookie header (it must include the "
                 "`t=...` entry)."
             )
@@ -569,7 +569,7 @@ class UnifiedTickTickAPI:
             )
             self._v2_client.set_session(session)
 
-            # Verify by hitting /user/status — this also gives us the real
+            # Verify by hitting /user/status, this also gives us the real
             # inbox_id / user_id the hand-built SessionToken didn't have. A
             # stale cookie 401s here; a throttle 429s here.
             status = await self._v2_client.get_user_status()
@@ -587,7 +587,7 @@ class UnifiedTickTickAPI:
                 logger.error(
                     "V2 cookie could not be verified: rate-limited (HTTP 429) on "
                     "/user/status (%s). This is a THROTTLE, not proof of a stale "
-                    "cookie — the session may still be valid, we just can't "
+                    "cookie. The session may still be valid, we just can't "
                     "confirm it while throttled. Usual cause: too many sign-on "
                     "attempts (the server re-authenticating on every connection). "
                     "Refreshing the cookie will NOT help while throttled.",
@@ -596,7 +596,7 @@ class UnifiedTickTickAPI:
             else:
                 logger.error(
                     "V2 cookie verification failed: %s. The session in "
-                    "TICKTICK_V2_COOKIES is probably stale — refresh it from a "
+                    "TICKTICK_V2_COOKIES is probably stale. Refresh it from a "
                     "logged-in TickTick browser tab.",
                     e,
                 )
@@ -689,7 +689,7 @@ class UnifiedTickTickAPI:
         """Live auth health snapshot for diagnostics (no secrets).
 
         Performs two lightweight read pings (V1 `/project`, V2 `/user/status`)
-        to test the *current* validity of each session — so it catches a
+        to test the *current* validity of each session, so it catches a
         token/cookie that expired after startup, not just the boot-time state.
         Never returns credential values; only booleans + derived facts.
         """
@@ -1173,7 +1173,7 @@ class UnifiedTickTickAPI:
 
         V2 batch complete/delete/move silently no-op against tasks that no longer
         exist (empty result, no error), so we fetch each unique id first to turn a
-        vanished task into a real 404 — the same guard the singular
+        vanished task into a real 404, the same guard the singular
         ``complete_task`` / ``delete_task`` / ``move_task`` already apply.
 
         Raises:
@@ -1197,7 +1197,7 @@ class UnifiedTickTickAPI:
             await self._v2_client.get_task(parent_id)  # type: ignore  # Raises NotFoundError if missing
         except TickTickNotFoundError as exc:
             raise TickTickNotFoundError(
-                f"Parent task {parent_id} not found — it may have been deleted. "
+                f"Parent task {parent_id} not found, it may have been deleted. "
                 "Subtasks cannot be attached to a nonexistent parent.",
                 resource_type="task",
                 resource_id=parent_id,
@@ -1438,7 +1438,7 @@ class UnifiedTickTickAPI:
         Each update preserves unspecified fields: the existing task is fetched,
         the user-supplied delta is merged into it, and the full task is sent
         back. This is required because TickTick's V2 /batch/task endpoint
-        treats the update payload as the new task representation — any field
+        treats the update payload as the new task representation, any field
         not present in the body is reset to its default (e.g. repeatFlag
         becomes null, isAllDay flips to false, timeZone is wiped).
 
@@ -1449,6 +1449,7 @@ class UnifiedTickTickAPI:
                 And any of these optional fields:
                 - title: New title
                 - content: New content
+                - description: New checklist description
                 - priority: New priority (0, 1, 3, 5 or 'none', 'low', 'medium', 'high')
                 - start_date: New start date (datetime or ISO string)
                 - due_date: New due date (datetime or ISO string)
@@ -1476,6 +1477,11 @@ class UnifiedTickTickAPI:
 
         priority_map = {"none": 0, "low": 1, "medium": 3, "high": 5}
         v2_updates: list[dict[str, Any]] = []
+        # Pre-edit trash state per task, captured from the pre-fetch below so
+        # the caller can tell it just edited something that was in the bin
+        # (a trashed task reads as status "Active" and updates on it succeed).
+        # Free: we already fetch each task, so this costs no extra API call.
+        in_trash_by_id: dict[str, bool] = {}
 
         for update in updates:
             task_id = update.get("task_id")
@@ -1490,11 +1496,14 @@ class UnifiedTickTickAPI:
             # Pre-fetch so we can send the full task representation. Without
             # this, fields not in the delta would be wiped server-side.
             existing = await self.get_task(task_id, project_id)
+            in_trash_by_id[task_id] = bool(existing.deleted)
 
             if "title" in update and update["title"] is not None:
                 existing.title = update["title"]
             if "content" in update and update["content"] is not None:
                 existing.content = update["content"]
+            if "description" in update and update["description"] is not None:
+                existing.desc = update["description"]
             if "kind" in update and update["kind"] is not None:
                 existing.kind = update["kind"]
             if "priority" in update and update["priority"] is not None:
@@ -1533,6 +1542,11 @@ class UnifiedTickTickAPI:
 
         response = await self._v2_client.batch_tasks(update=v2_updates)  # type: ignore
         _check_batch_response_errors(response, "batch_update_tasks", [u["id"] for u in v2_updates])
+        # Attach the pre-edit trash state (derived, not part of TickTick's wire
+        # response) so the MCP tool can surface in_trash per task with no extra
+        # call. Underscore-prefixed like the other derived keys in this codebase.
+        if isinstance(response, dict):
+            response["_in_trash"] = in_trash_by_id
         return response
 
     async def batch_delete_tasks(
@@ -1688,7 +1702,7 @@ class UnifiedTickTickAPI:
         # V2 set_parent silently "succeeds" against deleted tasks/parents
         # (returns an etag, never an error). Attaching a subtask to a parent
         # that was deleted out from under us therefore looks like success but
-        # does nothing — the child ends up orphaned (the failure that motivated
+        # does nothing, the child ends up orphaned (the failure that motivated
         # this check). Verify every referenced child AND parent exists first,
         # deduped so a shared parent is only fetched once, so a vanished task
         # surfaces as a clear 404 instead of a silent no-op.

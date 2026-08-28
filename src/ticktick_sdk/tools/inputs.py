@@ -105,12 +105,16 @@ class TaskCreateItem(BaseModel):
     content: Optional[str] = Field(
         default=None,
         description="Task notes/content (supports markdown)",
-        max_length=10000,
+        # Operator-chosen cap. TickTick's own limit is 164,130 chars, the
+        # same for content and checklist descriptions (tested 2026-08-19).
+        max_length=60000,
     )
     description: Optional[str] = Field(
         default=None,
         description="Checklist description",
-        max_length=5000,
+        # Operator-chosen cap. TickTick's own limit is 164,130 chars, the
+        # same for content and checklist descriptions (tested 2026-08-19).
+        max_length=60000,
     )
     priority: Optional[str] = Field(
         default=None,
@@ -208,7 +212,16 @@ class TaskUpdateItem(BaseModel):
     content: Optional[str] = Field(
         default=None,
         description="New task content",
-        max_length=10000,
+        # Operator-chosen cap. TickTick's own limit is 164,130 chars, the
+        # same for content and checklist descriptions (tested 2026-08-19).
+        max_length=60000,
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="New checklist description",
+        # Operator-chosen cap. TickTick's own limit is 164,130 chars, the
+        # same for content and checklist descriptions (tested 2026-08-19).
+        max_length=60000,
     )
     priority: Optional[str] = Field(
         default=None,
@@ -497,13 +510,19 @@ class TaskListInput(BaseMCPInput):
             "- 'active': Current/pending tasks (default)\n"
             "- 'completed': Completed tasks (use days or from_date/to_date)\n"
             "- 'abandoned': Abandoned/won't-do tasks (use days or from_date/to_date)\n"
-            "- 'deleted': Trashed tasks"
+            "- 'deleted': Tasks in the trash/bin (deleted but recoverable). This "
+            "is the ONLY way to see trashed tasks. They never appear under "
+            "'active' or in ticktick_search_tasks. Trashed tasks come back with "
+            "in_trash: true."
         ),
     )
     # Existing filters
     project_id: Optional[str] = Field(
         default=None,
-        description="Filter by project ID",
+        description=(
+            "Filter by project ID. Works with every status "
+            "(active/completed/abandoned/deleted)."
+        ),
         pattern=r"^(inbox\d+|[a-f0-9]{24})$",
     )
     column_id: Optional[str] = Field(
@@ -517,11 +536,14 @@ class TaskListInput(BaseMCPInput):
     )
     tag: Optional[str] = Field(
         default=None,
-        description="Filter by tag name",
+        description="Filter by tag name. Works with every status.",
     )
     priority: Optional[str] = Field(
         default=None,
-        description="Filter by priority: 'none', 'low', 'medium', 'high'",
+        description=(
+            "Filter by priority: 'none', 'low', 'medium', 'high'. "
+            "Works with every status."
+        ),
         pattern=r"^(none|low|medium|high)$",
     )
     kind: Optional[List[Literal["TEXT", "NOTE", "CHECKLIST"]]] = Field(
@@ -559,7 +581,7 @@ class TaskListInput(BaseMCPInput):
     # Date range (for completed/abandoned status)
     from_date: Optional[str] = Field(
         default=None,
-        description="Start date for completed/abandoned queries (YYYY-MM-DD), inclusive, treated as 00:00 in TICKTICK_TIMEZONE. Must be paired with to_date — providing only one is ignored. Overrides 'days' when both are set.",
+        description="Start date for completed/abandoned queries (YYYY-MM-DD), inclusive, treated as 00:00 in TICKTICK_TIMEZONE. Must be paired with to_date. Providing only one is ignored. Overrides 'days' when both are set.",
         pattern=r"^\d{4}-\d{2}-\d{2}$",
     )
     to_date: Optional[str] = Field(
@@ -598,7 +620,7 @@ class TaskListInput(BaseMCPInput):
     )
     offset: int = Field(
         default=0,
-        description="Zero-based offset into the filtered task list. The response includes 'next_offset' (or a footer in markdown) when more tasks remain — call again with that value to fetch the next page.",
+        description="Zero-based offset into the filtered task list. The response includes 'next_offset' (or a footer in markdown) when more tasks remain. Call again with that value to fetch the next page.",
         ge=0,
     )
     response_format: ResponseFormat = Field(
@@ -629,7 +651,7 @@ class SearchInput(BaseMCPInput):
         default=None,
         description=(
             "Text to match against task titles and content (case-insensitive "
-            "substring). Optional — omit to filter without a text query."
+            "substring). Optional, omit to filter without a text query."
         ),
         max_length=200,
     )
@@ -689,12 +711,14 @@ class SearchInput(BaseMCPInput):
         description=(
             "Maximum tasks per page. The response also respects a hard size "
             "budget, so a page may contain fewer than 'limit'; when more match, "
-            "'next_offset' is set (or a markdown footer is shown) — call again "
+            "'next_offset' is set (or a markdown footer is shown), call again "
             "with it to fetch the next page. 'total' always reports the true "
             "match count regardless of 'limit'."
         ),
         ge=1,
-        le=100,
+        # 500 matches list_tasks. It was 100, which rejected routines that
+        # pass a uniform limit=200 to both tools.
+        le=500,
     )
     offset: int = Field(
         default=0,
